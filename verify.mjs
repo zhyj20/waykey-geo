@@ -1,19 +1,63 @@
-import { readFileSync, existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import vm from 'node:vm';
 
-const requiredFiles = [
-  'index.html', 'styles.css', 'app.js',
-  'assets/logo.svg', 'assets/balance-hero.svg', 'assets/balance-task.svg',
-  'assets/buddy.svg', 'assets/map-links.svg'
+const files = [
+  'index.html', 'styles.css', 'app.js', 'data.js',
+  'assets/logo.svg', 'assets/balance-hero.svg', 'assets/block.svg',
+  'assets/buddy.svg', 'assets/speaker.svg', 'assets/stairs.svg', 'assets/pattern.svg'
 ];
-const requiredTexts = ['自学大师', '一起修好一座', '我的数学地图', '证据矩阵', '不汇总成一个分数'];
-const html = readFileSync('index.html', 'utf8');
-const missingFiles = requiredFiles.filter((file) => !existsSync(file));
-const missingTexts = requiredTexts.filter((text) => !html.includes(text));
+const missingFiles = files.filter((file) => !existsSync(file));
+if (missingFiles.length) throw new Error(`Missing required files: ${missingFiles.join(', ')}`);
 
-if (missingFiles.length || missingTexts.length) {
-  console.error(JSON.stringify({ missingFiles, missingTexts }, null, 2));
-  process.exit(1);
+const html = readFileSync('index.html', 'utf8');
+const app = readFileSync('app.js', 'utf8');
+const css = readFileSync('styles.css', 'utf8');
+const dataSource = readFileSync('data.js', 'utf8');
+const sandbox = { window: {} };
+vm.runInNewContext(dataSource, sandbox, { filename: 'data.js' });
+const content = sandbox.window.SELF_LEARN_CONTENT;
+
+function expect(condition, message) {
+  if (!condition) throw new Error(message);
 }
 
-console.log(`Static QA passed: ${requiredFiles.length} files and ${requiredTexts.length} key PRD statements present.`);
+const expectedSubjects = ['math', 'chinese', 'english'];
+expect(content.subjects.map((item) => item.id).join('|') === expectedSubjects.join('|'), 'Three required subjects are not defined.');
+expect(content.scenes.length === 12, `Expected 12 learning scenes, got ${content.scenes.length}.`);
+for (const subject of expectedSubjects) {
+  const scenes = content.scenes.filter((scene) => scene.subject === subject);
+  expect(scenes.length === 4, `${subject} must have four learning scenes.`);
+  expect(scenes.every((scene) => scene.activity && (scene.activity.prompt || scene.subtitle) && scene.activity.transfer && scene.activity.transferOptions?.length >= 2), `${subject} scenes need explore and transfer content.`);
+}
 
+const sceneIds = [
+  'math-balance', 'math-picnic', 'math-stairs', 'math-city',
+  'chinese-sound-lab', 'chinese-book-detective', 'chinese-character-workshop', 'chinese-story-director',
+  'english-sound-friends', 'english-command-station', 'english-mini-theatre', 'english-treasure-book'
+];
+expect(sceneIds.every((id) => content.sceneById[id]), 'One or more named teaching scenes are missing.');
+expect(content.projects.length === 3, 'Expected three cross-subject projects.');
+expect(['project-picnic', 'project-rescue', 'project-museum'].every((id) => content.projects.some((item) => item.id === id)), 'Named projects are missing.');
+
+const requiredAppContracts = [
+  'selfLearningMasterV2', 'localStorage', 'MediaRecorder', 'SpeechSynthesisUtterance',
+  'completeExplore', 'completeExpression', 'completeTransfer', 'completeDelayedReview',
+  'evidenceGuidance', 'data-drag-block', 'draw-alternative', 'toggle-pause',
+  'data-hold-parent', 'delete-data', 'review-answer', 'renderParent'
+];
+const missingContracts = requiredAppContracts.filter((token) => !app.includes(token));
+expect(!missingContracts.length, `Missing interaction/data contracts: ${missingContracts.join(', ')}`);
+expect(!/\b(fetch|XMLHttpRequest|sendBeacon)\s*\(/.test(app), 'The child experience must not upload learning data by default.');
+
+const requiredHtml = ['data.js', 'app.js', 'live-region', 'parent-gate', 'privacy-dialog', 'skip-link'];
+const missingHtml = requiredHtml.filter((token) => !html.includes(token));
+expect(!missingHtml.length, `Missing app shell/accessibility hooks: ${missingHtml.join(', ')}`);
+expect(css.includes('reduced-motion') && css.includes(':focus-visible') && css.includes('draggable-block'), 'Accessibility and alternate-interaction styles are incomplete.');
+
+console.log(JSON.stringify({
+  status: 'passed',
+  subjects: content.subjects.length,
+  scenes: content.scenes.length,
+  projects: content.projects.length,
+  checked: ['content model', 'five-stage evidence hooks', 'local-only privacy', 'sound/voice fallback', 'drag click alternative', 'parent gate/delete', 'keyboard/motion styles']
+}, null, 2));

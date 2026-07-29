@@ -1,0 +1,23 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="620" height="330" viewBox="0 0 620 330" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="&#229;&#128;&#190;&#230;&#150;&#156;&#231;&#154;&#132;&#229;&#164;&#169;&#229;&#185;&#179;">
+<g id="Vector">
+<path d="M310 88V269Z" fill="black"/>
+<path d="M310 88V269" stroke="#4F6BFF" stroke-width="18" stroke-linecap="round"/>
+</g>
+<g id="Vector_2">
+<path d="M107 145L513 87Z" fill="black"/>
+<path d="M107 145L513 87" stroke="#17233C" stroke-width="12" stroke-linecap="round"/>
+</g>
+<path id="Vector_3" d="M310 48L340 100H280L310 48Z" fill="#F5B942"/>
+<g id="Vector_4">
+<path d="M107 145L72 244ZM107 145L142 244ZM513 87L478 194ZM513 87L548 194Z" fill="black"/>
+<path d="M72 244L107 145L142 244M478 194L513 87L548 194" stroke="#66738A" stroke-width="5"/>
+</g>
+<path id="Vector_5" d="M55 244H159C159 281 137 298 107 298C77 298 55 281 55 244ZM461 194H565C565 231 543 248 513 248C483 248 461 231 461 194Z" fill="white" stroke="#4F6BFF" stroke-width="5"/>
+<g id="Vector_6">
+<path d="M242 294H378Z" fill="black"/>
+<path d="M242 294H378" stroke="#17233C" stroke-width="18" stroke-linecap="round"/>
+</g>
+</g>
+</svg>
+

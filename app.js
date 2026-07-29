@@ -423,7 +423,7 @@
         <div class="section-heading"><div><h2>三座学习岛</h2><p>不必按课本页码排队。学校进度、你的兴趣和已经收集到的证据会一起决定下一步。</p></div></div>
         <div class="subject-grid">${content.subjects.map((subject) => {
           const subjectScenes = content.scenes.filter((scene) => scene.subject === subject.id);
-          const finished = subjectScenes.filter((scene) => sceneProgress(scene.id).comple…9051 tokens truncated…irection === 'up' ? selected - 1 : selected + 1;
+          const finished = subjectScenes.filter((scene) => sceneProgress(scene.id).comple…9548 tokens truncated…irection === 'up' ? selected - 1 : selected + 1;
     if (next < 0 || next >= list.length) {
       announce('这张卡已经在最合适的一端了。');
       return;

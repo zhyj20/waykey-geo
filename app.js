@@ -423,7 +423,396 @@
         <div class="section-heading"><div><h2>三座学习岛</h2><p>不必按课本页码排队。学校进度、你的兴趣和已经收集到的证据会一起决定下一步。</p></div></div>
         <div class="subject-grid">${content.subjects.map((subject) => {
           const subjectScenes = content.scenes.filter((scene) => scene.subject === subject.id);
-          const finished = subjectScenes.filter((scene) => sceneProgress(scene.id).comple…9548 tokens truncated…irection === 'up' ? selected - 1 : selected + 1;
+          const finished = subjectScenes.filter((scene) => sceneProgress(scene.id).completedAt).length;
+          return `<button class="subject-card ${subject.color}" type="button" data-action="show-subject" data-subject="${subject.id}"><div class="card-content"><span class="card-kicker">${finished}/${subjectScenes.length} 个探索留下发现</span><h3>${escapeHTML(subject.childName)}</h3><p>${escapeHTML(subject.description)}</p></div><img class="card-art" src="${subject.art}" alt="" /></button>`;
+        }).join('')}</div>
+        <div class="section-heading"><div><h2>你的问题线</h2><p>问题不会被判对错；它们会变成下一次探索的入口。</p></div></div>
+        ${renderQuestionLine(true)}
+      </div>`;
+  }
+
+  function renderQuestionLine(compact = false) {
+    const latest = state.questions.slice(-3).reverse();
+    return `
+      <section class="question-line ${compact ? 'surface-card' : ''}">
+        ${compact ? '' : '<h2>小通正在收集的问题</h2><p>你可以说、选、画，或者慢慢想一想。</p>'}
+        <div class="question-feed">${latest.length ? latest.map((item) => `<article class="question-item"><b>${escapeHTML(content.subjectById[item.subject]?.name || '发现')}</b><p>“${escapeHTML(item.text)}”</p></article>`).join('') : '<div class="empty-state">还没有问题也没关系。任务里会有“我发现”“我猜”“我想知道”的小按钮。</div>'}</div>
+        <div class="ask-panel"><textarea id="free-question" maxlength="90" placeholder="家长可以代孩子记下原话；孩子也可以在任务里选问题卡。"></textarea><button class="button button-secondary small-button" type="button" data-action="save-free-question">把这句话放进发现册</button></div>
+      </section>`;
+  }
+
+  function renderSubject(subjectId) {
+    const subject = content.subjectById[subjectId];
+    if (!subject) return renderHome();
+    const subjectScenes = content.scenes.filter((scene) => scene.subject === subjectId);
+    return `
+      <div class="page-wrap">
+        <button class="back-button" type="button" data-route="home">回到今天探索</button>
+        <section class="hero-card ${subject.color}" aria-label="${escapeHTML(subject.name)}学习岛">
+          <div class="hero-copy"><p class="eyebrow">${escapeHTML(subject.name)} · ${escapeHTML(subject.childName)}</p><h1>${escapeHTML(subject.description)}</h1><p>从一个情景开始，先试一试，再把你的想法告诉小通。</p></div><img class="hero-illustration" src="${subject.art}" alt="" />
+        </section>
+        <div class="section-heading"><div><h2>选择一张任务卡</h2><p>每一张都有动手、表达、换故事和发现种子。</p></div></div>
+        <div class="scene-grid">${subjectScenes.map((scene) => sceneCard(scene, true)).join('')}</div>
+      </div>`;
+  }
+
+  function missionStepper(progress) {
+    const labels = ['选任务', '先试试', '说想法', '换故事', '留发现'];
+    const index = progress.stage + 1;
+    return `<div class="mission-stepper" aria-label="本次学习的五步"><div class="step-chip done">${labels[0]}</div>${labels.slice(1).map((label, i) => `<div class="step-chip ${i + 1 === index ? 'active' : ''} ${i + 1 < index ? 'done' : ''}">${label}</div>`).join('')}</div>`;
+  }
+
+  function feedbackMarkup(progress) {
+    return progress.feedback ? `<div class="activity-feedback ${progress.feedbackGood ? 'good' : 'gentle'}">${escapeHTML(progress.feedback)}</div>` : '';
+  }
+
+  function renderBalance(scene, progress) {
+    const target = scene.activity.target;
+    const rightBlocks = Array.from({ length: progress.rightCount }, () => '<img class="block-piece" src="assets/block.svg" alt="一块积木" />').join('');
+    const leftBlocks = Array.from({ length: target }, () => '<img class="block-piece" src="assets/block.svg" alt="一块积木" />').join('');
+    return `
+      <div class="method-row" role="group" aria-label="选择一种开始方法">
+        <button class="method-button ${progress.method === 'one' ? 'selected' : ''}" type="button" data-action="balance-method" data-method="one"><b>一个个放</b><span>慢一点，每一步都看见。</span></button>
+        <button class="method-button ${progress.method === 'split' ? 'selected' : ''}" type="button" data-action="balance-method" data-method="split"><b>先想 3 和 2</b><span>把 5 看成两小群。</span></button>
+        <button class="method-button ${progress.method === 'draw' ? 'selected' : ''}" type="button" data-action="balance-method" data-method="draw"><b>先画 5 个点</b><span>用图帮眼睛想一想。</span></button>
+      </div>
+      <div class="balance-stage" aria-label="天平操作区">
+        <div class="balance-pan left"><h3>左边已经有 ${target} 块</h3>${leftBlocks}</div>
+        <div class="balance-pan ${progress.rightCount === target ? 'balanced' : ''}" id="balance-drop-zone" tabindex="0" aria-label="右边天平盘，现在有${progress.rightCount}块积木"><h3>右边有 ${progress.rightCount} 块</h3>${rightBlocks || '<span>还没有放积木</span>'}</div>
+        <div class="balance-actions">
+          <button class="button button-primary small-button" type="button" data-action="balance-add" data-count="1">放 1 块</button>
+          <button class="button button-secondary small-button" type="button" data-action="balance-add" data-count="3">先放 3 块</button>
+          <button class="button button-secondary small-button" type="button" data-action="balance-add" data-count="2">再放 2 块</button>
+          <button class="button button-quiet small-button" type="button" data-action="balance-guess" data-count="4">我猜 4 块</button>
+          <button class="button button-quiet small-button" type="button" data-action="balance-hint">给我一个小提示</button>
+        </div>
+      </div>
+      <div class="hint-line"><span class="status-pill">可以拖积木到右盘，也可以点按钮放。</span><button class="draggable-block" type="button" draggable="true" data-drag-block="1" aria-label="拖动一块积木到右边天平盘"><img src="assets/block.svg" alt="" />拖一块积木</button><button class="read-button" type="button" data-say="左边有五块积木。右边也要有几块，天平才会一样？">再听题目</button></div>
+      ${feedbackMarkup(progress)}`;
+  }
+
+  function renderChoice(scene, progress) {
+    const activity = scene.activity;
+    return `
+      ${activity.say ? `<div class="instruction-row"><button class="read-button" type="button" data-say="${escapeHTML(activity.say)}">按一下听声音</button><p>声音只在你主动按下时播放。</p></div>` : ''}
+      <div class="choice-grid">${activity.options.map((option) => `<button class="choice-card ${progress.selectedAnswer === option.id ? 'selected' : ''}" type="button" data-action="choice-answer" data-answer-id="${option.id}"><b>${escapeHTML(option.label)}</b><span>${escapeHTML(option.detail)}</span></button>`).join('')}</div>
+      ${feedbackMarkup(progress)}`;
+  }
+
+  function renderSequence(scene, progress) {
+    const activity = scene.activity;
+    const order = progress.sequence || activity.cards.slice();
+    return `
+      <div class="sequence-wrap"><div class="sequence-list">${order.map((item, index) => `<button class="sequence-card ${progress.selectedSequenceIndex === index ? 'active' : ''}" type="button" data-action="sequence-select" data-index="${index}"><b>${index + 1}</b><span>${escapeHTML(item)}</span><small>选中后可上下移动</small></button>`).join('')}</div><div class="sequence-controls"><button type="button" data-action="sequence-move" data-direction="up">往上放</button><button type="button" data-action="sequence-move" data-direction="down">往下放</button><button type="button" data-action="sequence-confirm">我排好了</button></div></div>
+      ${feedbackMarkup(progress)}`;
+  }
+
+  function renderBuild(scene, progress) {
+    const activity = scene.activity;
+    return `
+      <div class="build-grid">${activity.pieces.map((piece) => `<button class="build-piece ${progress.selectedPieces.includes(piece) ? 'selected' : ''}" type="button" data-action="build-toggle" data-piece="${escapeHTML(piece)}"><b>${escapeHTML(piece)}</b><span>点一下选它；再点一次可以放回去。</span></button>`).join('')}</div>
+      <div class="stage-footer"><span class="status-pill">你选择了 ${progress.selectedPieces.length || 0} 个材料</span><button class="button button-primary" type="button" data-action="build-confirm">我想这样搭</button></div>
+      ${feedbackMarkup(progress)}`;
+  }
+
+  function renderAction(scene, progress) {
+    const activity = scene.activity;
+    return `
+      <div class="instruction-row"><button class="read-button" type="button" data-say="${escapeHTML(activity.say)}">按一下听指令</button><p>听见后，用你觉得对的动作卡回应。</p></div>
+      <div class="action-grid">${activity.actions.map((action) => `<button class="action-card ${progress.selectedAction === action ? 'selected' : ''}" type="button" data-action="action-answer" data-action-name="${escapeHTML(action)}"><b>${escapeHTML(action)}</b><span>选好后，小通会告诉你下一步。</span></button>`).join('')}</div>
+      ${feedbackMarkup(progress)}`;
+  }
+
+  function renderDraw(scene, progress, context = 'explore') {
+    return `
+      <div class="draw-wrap"><canvas class="draw-canvas" id="drawing-canvas" width="840" height="520" tabindex="0" aria-label="自由画板，使用鼠标、手指或触控笔画图；不方便画时可选择想法卡"></canvas><aside class="draw-tools"><h3>画的时候想一想</h3><p>画完不需要漂亮。你可以圈一圈、画人物、画路线，或者画你想到的办法。</p><button class="button button-secondary small-button" type="button" data-action="draw-clear">重新画</button><button class="button button-primary small-button" type="button" data-action="draw-save" data-context="${context}">把这张画放进发现册</button><button class="button button-quiet small-button" type="button" data-action="draw-alternative" data-scene-id="${scene.id}" data-context="${context}">我想用想法卡说</button><button class="read-button" type="button" data-say="画完不需要漂亮。请用画告诉小通你想到的办法。">听一遍</button></aside></div>
+      ${feedbackMarkup(progress)}`;
+  }
+
+  function renderExplore(scene, progress) {
+    const kind = scene.activity.kind;
+    const activityBody = {
+      balance: renderBalance,
+      choice: renderChoice,
+      sequence: renderSequence,
+      build: renderBuild,
+      draw: renderDraw,
+      action: renderAction
+    }[kind](scene, progress);
+    return `
+      <h2>先用你的办法试一试</h2>
+      <div class="instruction-row"><p>${escapeHTML(scene.activity.prompt || '慢慢试，小通会看见你的办法。')}</p><button class="read-button" type="button" data-say="${escapeHTML(scene.activity.prompt || scene.subtitle)}">听题目</button></div>
+      <div class="activity-panel">${activityBody}</div>
+      <div class="stage-footer"><button class="button button-quiet" type="button" data-route="home">先去别处看看</button><button class="button button-primary" type="button" data-action="mission-next" data-scene-id="${scene.id}">我试好了，想说说想法</button></div>`;
+  }
+
+  function renderExpression(scene, progress) {
+    const sentences = [
+      '我先看一看，再慢慢试。',
+      '我发现可以把它分成两小群。',
+      '我想换一张图再证明一次。'
+    ];
+    return `
+      <h2>把你的想法告诉小通</h2><p>你不一定要打字。选一种你舒服的办法就好。</p>
+      <div class="expression-grid">
+        <button class="expression-card ${progress.expressionMode === 'cards' ? 'selected' : ''}" type="button" data-action="expression-mode" data-mode="cards"><h3>选一句想法卡</h3><p>用一句话说出你刚才怎样做。</p></button>
+        <button class="expression-card ${progress.expressionMode === 'voice' ? 'selected' : ''}" type="button" data-action="expression-mode" data-mode="voice"><h3>说给小通听</h3><p>只在本机录音，不会自动上传。</p></button>
+        <button class="expression-card ${progress.expressionMode === 'draw' ? 'selected' : ''}" type="button" data-action="expression-mode" data-mode="draw"><h3>再画一张图</h3><p>画出你的办法、故事或动作。</p></button>
+      </div>
+      ${progress.expressionMode === 'cards' ? `<div class="sentence-options">${sentences.map((sentence) => `<button class="sentence-option ${progress.selectedSentence === sentence ? 'selected' : ''}" type="button" data-action="sentence-choose" data-sentence="${escapeHTML(sentence)}">${escapeHTML(sentence)}</button>`).join('')}</div>` : ''}
+      ${progress.expressionMode === 'voice' ? renderVoicePanel(scene, progress) : ''}
+      ${progress.expressionMode === 'draw' ? renderDraw(scene, progress, 'expression') : ''}
+      ${feedbackMarkup(progress)}
+      <div class="stage-footer"><button class="button button-quiet" type="button" data-action="mission-prev" data-scene-id="${scene.id}">回到刚才的任务</button><button class="button button-primary" type="button" data-action="expression-confirm" data-scene-id="${scene.id}">我已经表达了，换个故事试试</button></div>`;
+  }
+
+  function renderVoicePanel(scene, progress) {
+    const recording = runtime.mediaRecorder && runtime.mediaRecorder.state === 'recording';
+    return `<div class="recording-status"><b>语音只在你按下录音后才会使用麦克风。</b><p>${recording ? '正在录音。说完后按“停下来”。' : progress.recorded ? '已经留下本次会话的本地录音。你也可以不用录音，改用想法卡或画图。' : '如果电脑不支持录音，也可以直接用想法卡或画图。'}</p><div class="hero-actions">${recording ? '<button class="button button-yellow small-button" type="button" data-action="record-stop">停下来</button>' : '<button class="button button-secondary small-button" type="button" data-action="record-start">开始本地录音</button>'}<button class="read-button" type="button" data-say="请告诉小通，你刚才是怎样想到的。">听提示</button></div></div>`;
+  }
+
+  function renderTransfer(scene, progress) {
+    const activity = scene.activity;
+    return `
+      <h2>换一个故事看看</h2><p>这不是下一道题。我们只是想知道：换了地方，你还会不会用刚才的想法？</p>
+      <div class="transfer-card"><h3>${escapeHTML(activity.transfer)}</h3><div class="transfer-options">${activity.transferOptions.map((option) => `<button class="transfer-option ${progress.transferAnswer === option ? 'selected' : ''}" type="button" data-action="transfer-answer" data-scene-id="${scene.id}" data-answer="${escapeHTML(option)}"><b>${escapeHTML(option)}</b><span>选一个你愿意先试的办法。</span></button>`).join('')}</div></div>
+      ${feedbackMarkup(progress)}
+      <div class="stage-footer"><button class="button button-quiet" type="button" data-action="mission-prev" data-scene-id="${scene.id}">回去再讲讲</button><button class="button button-primary" type="button" data-action="mission-next" data-scene-id="${scene.id}">我换故事试过了</button></div>`;
+  }
+
+  function renderSeed(scene) {
+    const starters = [
+      `我发现…… ${scene.seed}`,
+      `我猜…… ${scene.seed}`,
+      `我想知道为什么…… ${scene.seed}`,
+      `如果……会怎样？ ${scene.seed}`
+    ];
+    return `
+      <h2>留下一颗发现种子</h2><p>选一句最像你的想法的话。它会留在发现册里，成为下一次任务的入口。</p>
+      <div class="seed-grid"><section class="seed-card"><h3>我想留下一个问题</h3><p>问题不用写得很完整，选一句或请家长帮你记下原话。</p><div class="question-starters">${starters.map((starter) => `<button class="question-starter" type="button" data-action="seed-question" data-scene-id="${scene.id}" data-question="${escapeHTML(starter)}">${escapeHTML(starter)}</button>`).join('')}</div></section><section class="offline-card"><h3>离开屏幕试一试</h3><p>${escapeHTML(scene.realWorld)}</p><button class="button button-green small-button" type="button" data-action="seed-offline" data-scene-id="${scene.id}">我想去试试</button><p class="sr-only">选择后不会要求上传照片。</p></section></div>
+      <div class="stage-footer"><button class="button button-quiet" type="button" data-action="mission-prev" data-scene-id="${scene.id}">回去再看看</button><button class="button button-secondary" type="button" data-route="discoveries">打开我的发现册</button></div>`;
+  }
+
+  function renderMission(sceneId) {
+    const scene = content.sceneById[sceneId];
+    if (!scene) return renderHome();
+    startSession();
+    const progress = sceneProgress(scene.id);
+    const subject = content.subjectById[scene.subject];
+    const stageRenderer = [renderExplore, renderExpression, renderTransfer, renderSeed][Math.min(progress.stage, 3)];
+    return `
+      <div class="page-wrap mission-shell"><div class="mission-topline"><button class="back-button" type="button" data-route="home">回到今天探索</button><span class="status-pill">${escapeHTML(subject.name)} · ${escapeHTML(sceneStatus(scene.id).label)}</span></div>
+        <section class="mission-header"><img src="${scene.art}" alt="" /><div><p class="eyebrow">${escapeHTML(subject.childName)}</p><h1>${escapeHTML(scene.title)}</h1><p>${escapeHTML(scene.subtitle)}</p></div><button class="button button-quiet small-button" type="button" data-action="toggle-pause">${state.session.paused ? '继续' : '暂停一下'}</button></section>
+        ${missionStepper(progress)}
+        <section class="mission-stage" aria-live="polite">${stageRenderer(scene, progress)}</section>
+      </div>`;
+  }
+
+  function renderReview(sceneId) {
+    const scene = content.sceneById[sceneId];
+    const review = state.reviews.find((item) => item.sceneId === sceneId && item.status === 'waiting');
+    if (!scene || !review) return renderDiscoveries();
+    const days = Math.ceil((review.dueAt - Date.now()) / DAY);
+    if (days > 0) {
+      return `<div class="page-wrap"><section class="mission-stage"><p class="eyebrow">隔几天再见面</p><h1>这张回访卡还在等一等</h1><p>大约 ${days} 天后，小通会换一个故事问你同一个想法。现在可以去做别的小探索。</p><button class="button button-primary" type="button" data-route="discoveries">回到发现册</button></section></div>`;
+    }
+    return `
+      <div class="page-wrap mission-shell"><div class="mission-topline"><button class="back-button" type="button" data-route="discoveries">回到发现册</button><span class="status-pill">隔几天，再换个故事</span></div>
+        <section class="mission-header"><img src="${scene.art}" alt="" /><div><p class="eyebrow">不是复习测验</p><h1>还记得你自己的办法吗？</h1><p>隔了几天，小通把它放进一个新故事里。慢慢想，你也可以选“我还想再看看”。</p></div></section>
+        <section class="mission-stage"><h2>${escapeHTML(scene.activity.transfer)}</h2><div class="transfer-options">${scene.activity.transferOptions.map((option) => `<button class="transfer-option" type="button" data-action="review-answer" data-scene-id="${scene.id}" data-answer="${escapeHTML(option)}"><b>${escapeHTML(option)}</b><span>这是我的想法</span></button>`).join('')}<button class="transfer-option" type="button" data-action="review-answer" data-scene-id="${scene.id}" data-answer="我还想再看看"><b>我还想再看看</b><span>这也是很有用的回答。</span></button></div><p class="helper-text">小通不会因为这一次就说“你已经掌握”。它只会把这条新证据和你之前的操作、图或语言放在一起看。</p></section>
+      </div>`;
+  }
+
+  function renderDiscoveries() {
+    const groups = content.subjects.map((subject) => ({ subject, concepts: content.concepts.filter((concept) => concept.subject === subject.id) }));
+    const waitingReviews = state.reviews.filter((review) => review.status === 'waiting');
+    return `
+      <div class="page-wrap"><div class="section-heading"><div><h2>我的发现册</h2><p>这里不写分数。它只记得：你试过什么、讲过什么、还想问什么。</p></div><button class="button button-secondary small-button" type="button" data-route="home">再选一个任务</button></div>
+        <div class="discoveries-layout"><section class="discovery-map"><h1>我正在长出的想法</h1><p>颜色是路标，不是好坏。每条路都可以慢慢走。</p><div class="concept-list">${groups.map(({subject, concepts}) => concepts.map((concept) => { const status = conceptStatus(concept.id); return `<article class="concept-card ${status.code}"><i class="concept-dot" aria-hidden="true"></i><div><b>${escapeHTML(concept.childLabel)}</b><span>${escapeHTML(status.detail)}</span></div><small>${escapeHTML(status.label)}</small></article>`; }).join('')).join('')}</div></section>
+          <aside>${renderQuestionLine(false)}${waitingReviews.length ? `<section class="question-line"><h2>过几天再见面</h2><p>这些不是作业。等时间到了，小通会换一个故事问你。</p><div class="question-feed">${waitingReviews.map((review) => { const scene = content.sceneById[review.sceneId]; const days = Math.max(0, Math.ceil((review.dueAt - Date.now()) / DAY)); return `<article class="question-item"><b>${escapeHTML(scene.title)}</b><p>${days > 0 ? `大约 ${days} 天后再来看看` : '已经可以回来换一个故事试试'}</p>${days === 0 ? `<button class="text-button" type="button" data-route="review/${scene.id}">打开回访卡</button>` : ''}</article>`; }).join('')}</div></section>` : ''}</aside>
+        </div></div>`;
+  }
+
+  function projectProgress(project) {
+    return project.steps.filter((step) => sceneProgress(step.sceneId).completedAt).length;
+  }
+
+  function renderProjects() {
+    return `
+      <div class="page-wrap"><div class="section-heading"><div><h2>一起做个大项目</h2><p>一个问题会穿过语文、数学和英语。先做一小步，也能让世界发生变化。</p></div><button class="button button-secondary small-button" type="button" data-route="home">回到今天探索</button></div>
+      <div class="project-grid">${content.projects.map((project) => { const completed = projectProgress(project); const next = project.steps.find((step) => !sceneProgress(step.sceneId).completedAt) || project.steps[0]; return `<button class="project-card ${project.color}" type="button" data-action="project-start" data-project-id="${project.id}"><div class="card-content"><span class="card-kicker">已经完成 ${completed}/${project.steps.length} 步</span><h3>${escapeHTML(project.title)}</h3><p>${escapeHTML(project.description)}</p><div class="project-steps">${project.steps.map((step) => `<span class="project-step"><i></i>${escapeHTML(step.label)}</span>`).join('')}</div></div><img class="card-art" src="${project.art}" alt="" /></button>`; }).join('')}</div>
+      <div class="empty-state" style="margin-top:22px"><b>项目不是考试。</b> 做完其中一步后，可以先去别的地方探索；下一次再回来继续。</div></div>`;
+  }
+
+  function latestEvidence(limit = 8) {
+    return state.evidence.slice(-limit).reverse();
+  }
+
+  function getUnknowns() {
+    return content.concepts.map((concept) => ({ concept, status: conceptStatus(concept.id) })).filter(({status}) => status.code !== 'stable').slice(0, 7);
+  }
+
+  function nextRecommendation() {
+    const dueReview = state.reviews.find((review) => review.status === 'waiting' && review.dueAt <= Date.now());
+    if (dueReview) {
+      const scene = content.sceneById[dueReview.sceneId];
+      return { title: `打开「${scene.title}」回访卡`, reason: '这不是测验：隔几天后换一个故事，能帮助我们看见这个办法是否还能出现。' };
+    }
+    const interests = state.profile.interestThemes || [];
+    const schoolWords = String(state.profile.schoolTopic || '').replace(/\s+/g, '');
+    const candidates = content.scenes.map((scene) => {
+      const progress = sceneProgress(scene.id);
+      const concepts = scene.concepts.map((id) => ({ concept: content.concepts.find((item) => item.id === id), status: conceptStatus(id) }));
+      const unfinished = !progress.completedAt;
+      const needsEvidence = concepts.filter(({ status }) => !['stable', 'transferring'].includes(status.code)).length;
+      const missingPrereq = concepts.some(({ concept }) => concept.prereqs.some((id) => conceptStatus(id).code === 'unobserved'));
+      const sceneWords = `${scene.title} ${scene.subtitle} ${scene.realWorld}`;
+      const matchesInterest = interests.some((theme) => sceneWords.includes(theme));
+      const matchesSchool = schoolWords && sceneWords.replace(/\s+/g, '').includes(schoolWords);
+      const score = (unfinished ? 8 : 0) + needsEvidence * 3 + (matchesInterest ? 4 : 0) + (matchesSchool ? 5 : 0) - (missingPrereq ? 1 : 0);
+      return { scene, concepts, missingPrereq, matchesInterest, matchesSchool, score };
+    }).sort((a, b) => b.score - a.score);
+    const pick = candidates[0];
+    if (!pick) return { title: '换一个孩子的问题继续探索', reason: '已经留有发现的任务，可以从问题线中挑一个再深入。' };
+    const subject = content.subjectById[pick.scene.subject];
+    const reasonBits = [];
+    if (pick.matchesSchool) reasonBits.push('和家长写下的学校主题有关');
+    if (pick.matchesInterest) reasonBits.push('贴近孩子现在喜欢的主题');
+    if (pick.missingPrereq) reasonBits.push('前面的概念还没被观察到，但这不是禁止进入的门槛，可以先从这个真实场景试起');
+    if (!reasonBits.length) reasonBits.push(`还缺少关于“${subject.name}·${pick.scene.subtitle}”的真实互动证据`);
+    return { title: pick.scene.title, reason: `这只是下一步假设：${reasonBits.join('；')}。系统不会据此给孩子贴标签。` };
+  }
+
+  function renderParent() {
+    if (!state.parentUnlocked) {
+      setTimeout(openParentGate, 0);
+      return '<div class="page-wrap"><div class="empty-state">正在打开家长入口……</div></div>';
+    }
+    const evidence = latestEvidence();
+    const unknowns = getUnknowns();
+    const recommended = nextRecommendation();
+    const uniqueConcepts = new Set(state.evidence.flatMap((item) => item.concepts)).size;
+    return `
+      <div class="page-wrap parent-shell"><div class="parent-head"><div><h1>这段时间，孩子打开了哪些理解通道？</h1><p>只展示真实交互留下的证据、仍不确定的地方与下一步理由。没有总分，也不把“尚未观察”当成落后。</p></div><button class="button button-secondary small-button" type="button" data-route="home">回到儿童模式</button></div>
+      <div class="metric-grid"><article class="metric"><strong>${state.evidence.length}</strong><b>条真实互动证据</b><span>来源于操作、图、语言、动作或迁移。</span></article><article class="metric"><strong>${uniqueConcepts}</strong><b>个概念被观察到</b><span>被观察到不等于已经掌握。</span></article><article class="metric"><strong>${state.questions.length}</strong><b>个孩子的问题</b><span>问题会成为后续任务线索。</span></article><article class="metric"><strong>${state.reviews.filter((review) => review.status === 'waiting').length}</strong><b>张延迟回访卡</b><span>会在 3 天后换故事再看。</span></article></div>
+      <div class="parent-grid"><section class="parent-section"><h2>发生了什么</h2><p>每条记录都能追溯到一次具体交互，而不是一个汇总分数。</p><div class="evidence-list">${evidence.length ? evidence.map((item) => { const scene = content.sceneById[item.sceneId]; return `<article class="evidence-row"><div class="evidence-meta"><span>${escapeHTML(content.subjectById[item.subject].name)}</span><span>${escapeHTML(scene.title)}</span><span>${escapeHTML(item.phase)}</span><span>${item.prompted ? '有提示' : '独立尝试'}</span></div><p>${escapeHTML(item.summary || item.note)}</p><small>仍不确定：${escapeHTML(item.unknown || '需要更多场景观察。')} · 建议：${escapeHTML(item.recommendation || '换一种表示再试一次。')}</small></article>`; }).join('') : '<div class="empty-state">还没有互动证据。孩子完成第一场探索后，这里才会出现记录。</div>'}</div></section>
+      <aside class="parent-section"><h2>我们还不知道什么</h2><p>未知不是失败，而是下一次验证的方向。</p><div class="unknown-list">${unknowns.map(({concept, status}) => `<article class="unknown-row"><b>${escapeHTML(concept.label)}</b><span>${escapeHTML(status.detail)}</span></article>`).join('')}</div><div class="next-step-card"><b>系统的下一步假设：${escapeHTML(recommended.title)}</b><p>${escapeHTML(recommended.reason)}</p></div></aside></div>
+      <div class="parent-grid" style="margin-top:20px"><section class="parent-section"><h2>家长设置</h2><p>这些设置只保存在本机。语音与图片不会默认上传。</p><div class="settings-grid"><label>教材/方向<select data-setting="textbook"><option ${state.profile.textbook === '按兴趣探索' ? 'selected' : ''}>按兴趣探索</option><option ${state.profile.textbook === '人教版' ? 'selected' : ''}>人教版</option><option ${state.profile.textbook === '部编版' ? 'selected' : ''}>部编版</option><option ${state.profile.textbook === '其他教材' ? 'selected' : ''}>其他教材</option></select></label><label>学校正在学什么<input data-setting="schoolTopic" value="${escapeHTML(state.profile.schoolTopic)}" placeholder="例如：10以内加减" /></label><label>每次屏幕探索分钟数<select data-setting="screenMinutes"><option value="12" ${state.profile.screenMinutes === 12 ? 'selected' : ''}>12 分钟</option><option value="15" ${state.profile.screenMinutes === 15 ? 'selected' : ''}>15 分钟</option><option value="18" ${state.profile.screenMinutes === 18 ? 'selected' : ''}>18 分钟</option></select></label><label>孩子名字<input data-setting="name" value="${escapeHTML(state.profile.name)}" /></label></div><div class="switch-row"><label><input type="checkbox" data-setting="voicePermission" ${state.profile.voicePermission ? 'checked' : ''} /> 允许孩子主动使用本地录音</label><span>默认关闭</span></div><div class="switch-row"><label><input type="checkbox" data-setting="reducedMotion" ${state.profile.reducedMotion ? 'checked' : ''} /> 减少动效</label><span>更舒适地看屏幕</span></div><button class="text-button" type="button" data-action="open-privacy">查看本地数据与隐私说明</button><div class="danger-zone"><button class="button danger-button small-button" type="button" data-action="delete-data">删除这台电脑上的全部学习数据</button></div></section>
+      <section class="parent-section"><h2>孩子的问题线</h2><p>不要急着给答案。可以先问：“你为什么会这样想？”</p><div class="question-feed">${state.questions.length ? state.questions.slice(-8).reverse().map((item) => `<article class="question-item"><b>${escapeHTML(content.subjectById[item.subject].name)} · ${escapeHTML(content.sceneById[item.sceneId]?.title || '自由问题')}</b><p>“${escapeHTML(item.text)}”</p></article>`).join('') : '<div class="empty-state">暂时没有保存的问题。孩子可以在任务最后选问题卡，也可以由家长代记原话。</div>'}</div></section></div>
+      </div>`;
+  }
+
+  function renderBreakBanner() {
+    if (!state.session.breakOpen) return '';
+    return `<aside class="break-banner" aria-live="polite"><b>小通提醒：眼睛和身体该换个地方啦。</b><p>请看看远处、站起来走几步，或者去完成一个离屏小挑战。回来后会从这里继续。</p><div class="break-actions"><button class="button button-green small-button" type="button" data-action="take-break">我去活动一下</button><button class="button button-quiet small-button" type="button" data-action="close-break">我已经准备好了</button></div></aside>`;
+  }
+
+  function render() {
+    const route = parseRoute();
+    document.body.classList.toggle('reduced-motion', state.profile.reducedMotion);
+    const page = route.name === 'home' ? renderHome()
+      : route.name === 'subject' ? renderSubject(route.subjectId)
+      : route.name === 'discoveries' ? renderDiscoveries()
+      : route.name === 'projects' ? renderProjects()
+      : route.name === 'parent' ? renderParent()
+      : route.name === 'mission' ? renderMission(route.sceneId)
+      : route.name === 'review' ? renderReview(route.sceneId)
+      : renderHome();
+    app.innerHTML = `<div class="app-shell">${renderHeader(route)}<main id="main-content" class="page-main">${page}</main>${renderBreakBanner()}<div class="toast" id="toast" role="status"></div></div>`;
+    updateSessionUI();
+    const activeScene = route.name === 'mission' ? content.sceneById[route.sceneId] : null;
+    if (activeScene && (activeScene.activity.kind === 'draw' || (sceneProgress(activeScene.id).stage === 1 && sceneProgress(activeScene.id).expressionMode === 'draw'))) setupCanvas(activeScene.id);
+  }
+
+  function setFeedback(sceneId, message, good = false) {
+    const progress = sceneProgress(sceneId);
+    progress.feedback = message;
+    progress.feedbackGood = good;
+    saveState();
+  }
+
+  function selectBalanceMethod(sceneId, method) {
+    const scene = content.sceneById[sceneId];
+    const progress = sceneProgress(sceneId);
+    progress.method = method;
+    const messages = {
+      one: '一个一个放完全是好办法。每放一块，都可以看看两边差多少。',
+      split: '把 5 想成 3 和 2 是一种邀请。你也可以随时回到一个个放。',
+      draw: '好，先用图把看到的数量留住。画完后再看看右边要有几块。'
+    };
+    setFeedback(sceneId, messages[method]);
+    speak(messages[method]);
+    if (method === 'draw') {
+      progress.expressionMode = 'draw';
+    }
+    saveState();
+    render();
+  }
+
+  function addBalance(sceneId, amount, isGuess = false) {
+    const scene = content.sceneById[sceneId];
+    const progress = sceneProgress(sceneId);
+    const target = scene.activity.target;
+    progress.rightCount = Math.min(target + 2, progress.rightCount + amount);
+    if (progress.rightCount === target) {
+      completeExplore(scene, { representation: progress.method === 'draw' ? '图' : '实物', note: `孩子用“${progress.method === 'split' ? '3 和 2 的分组' : progress.method === 'draw' ? '画图' : '逐一放置'}”让两边都出现 ${target} 块。`, prompted: progress.hints > 0 });
+      setFeedback(sceneId, '天平安静下来了。小通不急着说“你会了”，更想知道：你是怎样知道两边一样的？', true);
+      speak('天平安静下来了。你愿意讲讲，你是怎样知道两边一样的吗？');
+    } else if (progress.rightCount > target) {
+      addEvidence({ scene, phase: 'explore', representation: '实物', prompted: true, note: `右边放到 ${progress.rightCount} 块，孩子正在比较两边。`, outcome: '需要再看', misconception: '可能把平衡理解为放得更多。' });
+      setFeedback(sceneId, `右边现在有 ${progress.rightCount} 块。天平没有责怪你，它只是邀请你数一数：左边和右边各有几块？`);
+    } else {
+      if (isGuess || progress.rightCount === 4) addEvidence({ scene, phase: 'explore', representation: '实物', prompted: true, note: '孩子先猜右边放 4 块。', outcome: '需要再看', misconception: '可能还没有逐一比较两边数量。' });
+      setFeedback(sceneId, `右边有 ${progress.rightCount} 块。你发现还差几块了吗？`);
+      speak(`右边有 ${progress.rightCount} 块。你觉得还差几块？`);
+    }
+    saveState();
+    render();
+  }
+
+  function useBalanceHint(sceneId) {
+    const progress = sceneProgress(sceneId);
+    progress.hints += 1;
+    setFeedback(sceneId, '小提示：不用急着找“更快”的办法。把左边的积木一块一块数出来，再看看右边是不是也有同样多。');
+    speak('不用急着找更快的办法。把左边一块一块数出来，再看看右边是不是也有同样多。');
+    saveState();
+    render();
+  }
+
+  function chooseOption(sceneId, answerId) {
+    const scene = content.sceneById[sceneId];
+    const progress = sceneProgress(sceneId);
+    const option = scene.activity.options.find((item) => item.id === answerId);
+    if (!option) return;
+    progress.selectedAnswer = answerId;
+    if (option.correct) {
+      completeExplore(scene, { representation: scene.subject === 'english' || scene.id === 'chinese-sound-lab' ? '声音' : '图', note: `孩子选择“${option.label}”。`, prompted: progress.hints > 0 });
+      setFeedback(sceneId, `你选了“${option.label}”。小通想听你说说：你是从哪里发现它的？`, true);
+    } else {
+      addEvidence({ scene, phase: 'explore', representation: scene.subject === 'english' || scene.id === 'chinese-sound-lab' ? '声音' : '图', prompted: true, note: `孩子选择“${option.label}”。`, outcome: '需要再看', misconception: option.misconception || '这个场景下的想法还不确定。' });
+      setFeedback(sceneId, option.misconception || '这个选择很有意思。我们再用图或声音慢慢看看。');
+    }
+    saveState();
+    render();
+  }
+
+  function selectSequence(sceneId, index) {
+    const progress = sceneProgress(sceneId);
+    progress.selectedSequenceIndex = Number(index);
+    saveState();
+    render();
+  }
+
+  function moveSequence(sceneId, direction) {
+    const scene = content.sceneById[sceneId];
+    const progress = sceneProgress(sceneId);
+    const list = progress.sequence || scene.activity.cards.slice();
+    const selected = progress.selectedSequenceIndex;
+    if (selected === undefined || selected === null) {
+      announce('先点一张故事卡，再决定往上还是往下放。');
+      return;
+    }
+    const next = direction === 'up' ? selected - 1 : selected + 1;
     if (next < 0 || next >= list.length) {
       announce('这张卡已经在最合适的一端了。');
       return;

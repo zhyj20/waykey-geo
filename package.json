@@ -1,10 +1,9 @@
 {
   "name": "self-learning-master",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
-  "description": "自学大师：陪伴式数学探索静态网站原型",
+  "description": "自学大师：面向一年级儿童的三科陪伴式探索学习系统",
   "scripts": {
-    "check": "node --check app.js && node verify.mjs"
+    "check": "node --check data.js && node --check app.js && node verify.mjs"
   }
 }
-

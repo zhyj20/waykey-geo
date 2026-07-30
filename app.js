@@ -15,6 +15,19 @@
     recordingStartedAt: 0,
     recordingUrl: null,
     recordingSceneId: null,
+    speechState: 'idle',
+    speechToken: 0,
+    lastSpeech: '',
+    questionCanvas: null,
+    questionDrawingContext: null,
+    questionDrawing: false,
+    questionMediaRecorder: null,
+    questionMediaChunks: [],
+    questionRecordingStartedAt: 0,
+    questionRecordingUrl: null,
+    questionRecordingId: null,
+    discardSceneRecording: false,
+    discardQuestionRecording: false,
     holdTimer: null,
     toastTimer: null
   };
@@ -35,6 +48,8 @@
       sceneProgress: {},
       evidence: [],
       questions: [],
+      questionDraft: { sceneId: 'math-balance', mode: 'why', pieceIndex: 0, captureMode: 'build', drawingData: null },
+      treasures: [],
       reviews: [],
       projects: {},
       parentUnlocked: false,
@@ -55,6 +70,8 @@
         sceneProgress: saved.sceneProgress || {},
         evidence: Array.isArray(saved.evidence) ? saved.evidence : [],
         questions: Array.isArray(saved.questions) ? saved.questions : [],
+        questionDraft: { ...base.questionDraft, ...(saved.questionDraft || {}) },
+        treasures: Array.isArray(saved.treasures) ? saved.treasures : [],
         reviews: Array.isArray(saved.reviews) ? saved.reviews : [],
         projects: saved.projects || {}
       };
@@ -87,7 +104,33 @@
     runtime.toastTimer = setTimeout(() => toast.classList.remove('visible'), 3400);
   }
 
+  function speechControlLabel() {
+    if (runtime.speechState === 'speaking') return '暂停声音';
+    if (runtime.speechState === 'paused') return '继续声音';
+    if (runtime.lastSpeech) return '重听声音';
+    return '声音控制';
+  }
+
+  function updateSpeechControls() {
+    document.querySelectorAll('[data-speech-control-label]').forEach((node) => { node.textContent = speechControlLabel(); });
+    document.querySelectorAll('[data-speech-control]').forEach((node) => {
+      node.setAttribute('aria-label', speechControlLabel());
+      node.setAttribute('aria-pressed', String(runtime.speechState === 'speaking' || runtime.speechState === 'paused'));
+    });
+  }
+
+  function setSpeechState(next) {
+    runtime.speechState = next;
+    updateSpeechControls();
+  }
+
+  function stopSpeech() {
+    if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+    setSpeechState('idle');
+  }
+
   function speak(message) {
+    runtime.lastSpeech = message;
     if (!state.profile.sound) {
       announce('声音提示已关闭。你可以看着图和文字继续探索。');
       return;
@@ -96,11 +139,51 @@
       announce(message);
       return;
     }
+    const token = ++runtime.speechToken;
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(message);
     utterance.lang = 'zh-CN';
     utterance.rate = 0.88;
+    utterance.onend = () => { if (token === runtime.speechToken) setSpeechState('idle'); };
+    utterance.onerror = () => { if (token === runtime.speechToken) setSpeechState('idle'); };
+    setSpeechState('speaking');
     window.speechSynthesis.speak(utterance);
+  }
+
+  function controlSpeech() {
+    if (!state.profile.sound) {
+      announce('声音提示现在关着。需要时可以先打开声音，或者继续看文字和图。');
+      return;
+    }
+    if (!('speechSynthesis' in window)) {
+      announce('这台电脑暂时不能播放声音。每一处声音提示都有文字或图卡可以继续。');
+      return;
+    }
+    if (runtime.speechState === 'speaking') {
+      window.speechSynthesis.pause();
+      setSpeechState('paused');
+      announce('声音先停在这里。想继续时再按一次。');
+      return;
+    }
+    if (runtime.speechState === 'paused') {
+      window.speechSynthesis.resume();
+      setSpeechState('speaking');
+      return;
+    }
+    if (runtime.lastSpeech) {
+      speak(runtime.lastSpeech);
+    } else {
+      announce('想听题目时，按题目旁边的“听一遍”就可以。');
+    }
+  }
+
+  function toggleSound() {
+    state.profile.sound = !state.profile.sound;
+    if (!state.profile.sound) stopSpeech();
+    saveState();
+    render();
+    if (state.profile.sound) speak('声音提示已经打开。想暂停或重听时，按右上角的声音控制。');
+    else announce('声音提示已关闭。所有任务仍有文字、图卡和操作替代。');
   }
 
   function parseRoute() {
@@ -108,7 +191,7 @@
     if (raw[0] === 'mission' && content.sceneById[raw[1]]) return { name: 'mission', sceneId: raw[1] };
     if (raw[0] === 'subject' && content.subjectById[raw[1]]) return { name: 'subject', subjectId: raw[1] };
     if (raw[0] === 'review' && content.sceneById[raw[1]]) return { name: 'review', sceneId: raw[1] };
-    if (['home', 'discoveries', 'projects', 'parent'].includes(raw[0])) return { name: raw[0] };
+    if (['home', 'discoveries', 'projects', 'parent', 'question-workshop'].includes(raw[0])) return { name: raw[0] };
     return { name: 'home' };
   }
 
@@ -134,6 +217,9 @@
         selectedPieces: [],
         selectedAnswer: null,
         selectedAction: null,
+        selectedMatchLeft: null,
+        selectedMatchRight: null,
+        lastMatchKey: null,
         expressionMode: null,
         selectedSentence: null,
         roleChoice: null,
@@ -272,6 +358,7 @@
       progress.transferComplete = true;
       progress.stage = Math.max(progress.stage, 3);
       addEvidence({ scene, phase: 'transfer', representation: '图', prompted: false, note: `在新故事中选择“${answer}”`, outcome: '迁移尝试' });
+      collectTreasure(scene);
       progress.feedback = '你换了一个故事，还是愿意用刚才的想法。小通想再听你说说理由。';
       announce('这次是换故事的证据，不是重复做题。');
     } else {
@@ -283,6 +370,21 @@
     render();
   }
 
+  function collectTreasure(scene) {
+    if (!scene.treasure || state.treasures.some((item) => item.sceneId === scene.id)) return;
+    state.treasures.push({
+      id: `${scene.id}-${Date.now()}`,
+      sceneId: scene.id,
+      subject: scene.subject,
+      word: scene.treasure.word,
+      meaning: scene.treasure.meaning,
+      note: scene.treasure.collectionLabel,
+      at: Date.now(),
+      source: '独立迁移'
+    });
+    state.treasures = state.treasures.slice(-30);
+  }
+
   function completeSeed(scene, text, kind = 'question') {
     const progress = sceneProgress(scene.id);
     if (!progress.transferComplete) {
@@ -290,8 +392,7 @@
       return;
     }
     if (kind === 'question') {
-      state.questions.push({ id: `${Date.now()}`, sceneId: scene.id, subject: scene.subject, text, at: Date.now(), source: '任务中的发现' });
-      state.questions = state.questions.slice(-60);
+      saveQuestion({ sceneId: scene.id, text, source: '任务中的发现', mode: 'starter' });
       addEvidence({ scene, phase: 'seed', representation: '语言', prompted: false, note: `孩子留下问题：“${text}”`, outcome: '主动提问' });
     } else {
       addEvidence({ scene, phase: 'seed', representation: '动作', prompted: false, note: `孩子选择离屏挑战：${text}`, outcome: '离屏探索' });
@@ -299,6 +400,7 @@
     progress.seedComplete = true;
     progress.completedAt = Date.now();
     progress.stage = 4;
+    markQuestionsVisitedByScene(scene.id);
     if (!state.reviews.some((review) => review.sceneId === scene.id && review.status === 'waiting')) {
       state.reviews.push({ id: `${scene.id}-${Date.now()}`, sceneId: scene.id, dueAt: Date.now() + 3 * DAY, status: 'waiting' });
     }
@@ -377,6 +479,7 @@
           </nav>
           <div class="top-actions">
             <button class="top-action" type="button" data-action="toggle-sound" aria-pressed="${state.profile.sound}"><img src="assets/speaker.svg" alt="" /><span>${state.profile.sound ? '声音开着' : '声音关着'}</span></button>
+            <button class="top-action" type="button" data-action="speech-control" data-speech-control aria-label="${speechControlLabel()}" aria-pressed="${runtime.speechState === 'speaking' || runtime.speechState === 'paused'}"><span data-speech-control-label>${speechControlLabel()}</span></button>
             <button class="top-action" type="button" data-action="toggle-pause"><span>${state.session.paused ? '继续探索' : '暂停一下'}</span></button>
             <button class="top-action parent-link" type="button" data-action="open-parent">家长入口</button>
           </div>
@@ -394,6 +497,22 @@
         <div><strong>今天的探索节奏</strong><p>${message}</p></div>
         <div class="session-progress"><div class="session-progress-track"><div class="session-progress-fill" data-session-fill style="width:${percent}%"></div></div><small>已一起探索 <b data-session-time>${formatElapsed(state.session.elapsed)}</b></small></div>
       </section>`;
+  }
+
+  function worldPlaceProgress(place) {
+    const completed = place.sceneIds.filter((sceneId) => sceneProgress(sceneId).completedAt);
+    const nextSceneId = place.sceneIds.find((sceneId) => !sceneProgress(sceneId).completedAt) || place.sceneIds[0];
+    return { completed: completed.length, nextSceneId };
+  }
+
+  function renderWorldState() {
+    const places = content.worldPlaces || [];
+    if (!places.length) return '';
+    return `<section class="world-state" aria-label="小通的小世界"><div class="section-heading"><div><h2>小通的小世界</h2><p>你完成的真实探索，会让这里慢慢发生变化；不是积分，也不是排名。</p></div></div><div class="world-grid">${places.map((place) => {
+      const progress = worldPlaceProgress(place);
+      const copy = progress.completed === 0 ? place.waiting : progress.completed === place.sceneIds.length ? place.ready : place.growing;
+      return `<article class="world-place ${place.color}"><img src="${place.art}" alt="" /><div><span class="card-kicker">${progress.completed}/${place.sceneIds.length} 个真实探索</span><h3>${escapeHTML(place.title)}</h3><p>${escapeHTML(copy)}</p><button class="text-button" type="button" data-action="start-scene" data-scene-id="${progress.nextSceneId}">${progress.completed === place.sceneIds.length ? '再去看看' : '帮小通走下一步'}</button></div></article>`;
+    }).join('')}</div></section>`;
   }
 
   function sceneCard(scene, compact = false) {
@@ -433,6 +552,7 @@
           </aside>
         </div>
         ${renderSessionRail()}
+        ${renderWorldState()}
         <div class="section-heading"><div><h2>今天可以从这里开始</h2><p>每科都只有一个小目标；选你最想先试的那一张。</p></div><button class="text-button" type="button" data-route="projects">查看跨学科项目</button></div>
         <div class="subject-grid">${recommendations.map((scene) => sceneCard(scene)).join('')}</div>
         <div class="section-heading"><div><h2>三座学习岛</h2><p>不必按课本页码排队。学校进度、你的兴趣和已经收集到的证据会一起决定下一步。</p></div></div>
@@ -446,14 +566,81 @@
       </div>`;
   }
 
+  function questionModes() {
+    return [
+      ['notice', '我发现……', '把看到的事留下来。'],
+      ['guess', '我猜……', '先大胆猜一猜。'],
+      ['why', '我想知道为什么……', '把一个为什么留下来。'],
+      ['what-if', '如果……会怎样？', '试着想象后面会发生什么。']
+    ];
+  }
+
+  function getQuestionDraft() {
+    const fallbackSceneId = content.scenes[0]?.id;
+    if (!state.questionDraft || !content.sceneById[state.questionDraft.sceneId]) {
+      state.questionDraft = { sceneId: fallbackSceneId, mode: 'why', pieceIndex: 0, captureMode: 'build', drawingData: null };
+    }
+    const draft = state.questionDraft;
+    const trail = content.inquiryTrailByScene[draft.sceneId];
+    if (!trail) draft.sceneId = fallbackSceneId;
+    const freshTrail = content.inquiryTrailByScene[draft.sceneId];
+    if (!questionModes().some(([id]) => id === draft.mode)) draft.mode = 'why';
+    if (!Number.isInteger(draft.pieceIndex) || draft.pieceIndex < 0 || draft.pieceIndex >= freshTrail.pieces.length) draft.pieceIndex = 0;
+    if (!['build', 'draw', 'voice'].includes(draft.captureMode)) draft.captureMode = 'build';
+    return draft;
+  }
+
+  function questionTextForDraft(draft = getQuestionDraft()) {
+    const trail = content.inquiryTrailByScene[draft.sceneId];
+    const piece = trail.pieces[draft.pieceIndex] || trail.pieces[0];
+    if (draft.mode === 'notice') return `我发现……${piece}`;
+    if (draft.mode === 'guess') return `我猜……${piece}`;
+    if (draft.mode === 'what-if') return `如果……${piece}，会怎样？`;
+    return `我想知道为什么……${piece}？`;
+  }
+
+  function renderQuestionItem(item, parent = false) {
+    const scene = content.sceneById[item.sceneId];
+    const subject = content.subjectById[item.subject];
+    const tags = (item.tags || []).map((tag) => `<span class="question-tag">${escapeHTML(tag)}</span>`).join('');
+    const status = item.status === 'following' ? '正在继续' : item.status === 'visited' ? '已经去试过' : '还想试一试';
+    const drawing = item.drawingData ? `<img class="question-drawing" src="${item.drawingData}" alt="孩子留下的问题画" />` : '';
+    const audio = item.audioSessionId && item.audioSessionId === runtime.questionRecordingId && runtime.questionRecordingUrl
+      ? `<audio controls preload="metadata" src="${runtime.questionRecordingUrl}">这台电脑不能播放这段本地录音。</audio>`
+      : item.audioSessionId ? '<small>这段录音只留在当次浏览器会话，刷新后不会保留。</small>' : '';
+    const continueButton = !parent && scene && item.status !== 'visited'
+      ? `<button class="text-button" type="button" data-action="question-followup" data-question-id="${item.id}">用这个问题继续</button>` : '';
+    return `<article class="question-item"><div class="question-item-head"><b>${escapeHTML(subject?.name || '发现')} · ${escapeHTML(scene?.title || '自由问题')}</b><span>${status}</span></div><p>“${escapeHTML(item.text)}”</p>${tags ? `<div class="question-tags">${tags}</div>` : ''}${drawing}${audio}${continueButton}</article>`;
+  }
+
   function renderQuestionLine(compact = false) {
     const latest = state.questions.slice(-3).reverse();
     return `
       <section class="question-line ${compact ? 'surface-card' : ''}">
-        ${compact ? '' : '<h2>小通正在收集的问题</h2><p>你可以说、选、画，或者慢慢想一想。</p>'}
-        <div class="question-feed">${latest.length ? latest.map((item) => `<article class="question-item"><b>${escapeHTML(content.subjectById[item.subject]?.name || '发现')}</b><p>“${escapeHTML(item.text)}”</p></article>`).join('') : '<div class="empty-state">还没有问题也没关系。任务里会有“我发现”“我猜”“我想知道”的小按钮。</div>'}</div>
-        <div class="ask-panel"><textarea id="free-question" maxlength="90" placeholder="家长可以代孩子记下原话；孩子也可以在任务里选问题卡。"></textarea><button class="button button-secondary small-button" type="button" data-action="save-free-question">把这句话放进发现册</button></div>
+        <div class="question-line-head"><div>${compact ? '<h2>你的问题线</h2><p>一个问题可以用图卡拼出来、画出来，或说给小通听。</p>' : '<h2>小通正在收集的问题</h2><p>问题不用写得很完整。你可以选、拼、画，或在家长同意后说出来。</p>'}</div><button class="button button-secondary small-button" type="button" data-route="question-workshop">做一个问题</button></div>
+        <div class="question-feed">${latest.length ? latest.map((item) => renderQuestionItem(item)).join('') : '<div class="empty-state">还没有问题也没关系。选一张图卡，拼出“我发现”“我猜”或“我想知道为什么”。</div>'}</div>
       </section>`;
+  }
+
+  function renderQuestionVoicePanel(draft) {
+    const recording = runtime.questionMediaRecorder?.state === 'recording';
+    if (!state.profile.voicePermission) {
+      return `<section class="question-capture-panel"><h3>说给小通听</h3><p>录音默认关闭。可以继续用图卡或画图；如果想录一段自己的问题，请请家长在家长入口里打开“允许本地录音”。</p><button class="button button-quiet small-button" type="button" data-action="open-parent">请家长帮忙</button></section>`;
+    }
+    return `<section class="question-capture-panel"><h3>说给小通听</h3><p>${recording ? '正在本机录音。想到哪里就说到哪里。' : '录音不会上传；停止后会在本次浏览器会话里留下可回听的问题。'}</p><div class="hero-actions">${recording ? '<button class="button button-yellow small-button" type="button" data-action="question-record-stop">停下来，留下这个问题</button>' : '<button class="button button-secondary small-button" type="button" data-action="question-record-start">开始本地录音</button>'}<button class="read-button" type="button" data-say="你可以说：我发现、我猜、我想知道为什么，或者如果会怎样。">听问题提示</button></div>${runtime.questionRecordingId ? `<p class="helper-text">刚才的问题已经放进发现册。你也可以继续再录一个。</p>` : ''}</section>`;
+  }
+
+  function renderQuestionWorkshop() {
+    const draft = getQuestionDraft();
+    const trail = content.inquiryTrailByScene[draft.sceneId];
+    const scene = content.sceneById[draft.sceneId];
+    const contexts = content.subjects.map((subject) => content.scenes.find((item) => item.subject === subject.id && !sceneProgress(item.id).completedAt) || content.scenes.find((item) => item.subject === subject.id));
+    const preview = questionTextForDraft(draft);
+    const buildPanel = `<section class="question-builder"><h2>先选一个开头</h2><div class="question-mode-grid">${questionModes().map(([id, label, note]) => `<button class="question-mode ${draft.mode === id ? 'selected' : ''}" type="button" data-action="question-mode" data-question-mode="${id}"><b>${label}</b><span>${note}</span></button>`).join('')}</div><h2>再拼一块你想问的事</h2><div class="question-piece-grid">${trail.pieces.map((piece, index) => `<button class="question-piece ${draft.pieceIndex === index ? 'selected' : ''}" type="button" data-action="question-piece" data-piece-index="${index}">${escapeHTML(piece)}</button>`).join('')}</div><div class="question-preview"><b>你做出来的问题</b><p>“${escapeHTML(preview)}”</p><button class="button button-primary" type="button" data-action="question-save">把它放进发现册</button></div></section>`;
+    const drawPanel = `<section class="question-capture-panel"><h2>画一个想知道的东西</h2><p>不用画漂亮。画一件让你好奇的事、一个路线或一个故事开头。</p><canvas class="draw-canvas question-canvas" id="question-canvas" width="840" height="520" tabindex="0" aria-label="问题画板，使用鼠标、手指或触控笔画出你想问的东西；也可以切回图卡拼问题"></canvas><div class="hero-actions"><button class="button button-quiet small-button" type="button" data-action="question-draw-clear">重新画</button><button class="button button-primary small-button" type="button" data-action="question-draw-save">把问题画放进发现册</button><button class="button button-quiet small-button" type="button" data-action="question-capture" data-capture-mode="build">我想用图卡拼</button></div></section>`;
+    const capture = draft.captureMode === 'draw' ? drawPanel : draft.captureMode === 'voice' ? renderQuestionVoicePanel(draft) : buildPanel;
+    return `
+      <div class="page-wrap question-workshop"><button class="back-button" type="button" data-route="discoveries">回到我的发现册</button><section class="mission-header"><img src="assets/buddy.svg" alt="" /><div><p class="eyebrow">小通的问题工坊</p><h1>把一个“为什么”做出来</h1><p>不需要打字。你可以拼图卡、画出来，或者在家长同意后说给小通听。</p></div></section><section class="mission-stage"><h2>这次想从哪里问起？</h2><div class="question-context-grid">${contexts.map((item) => `<button class="question-context ${item.id === scene.id ? 'selected' : ''}" type="button" data-action="question-context" data-scene-id="${item.id}"><b>${escapeHTML(content.subjectById[item.subject].name)}</b><span>${escapeHTML(item.title)}</span></button>`).join('')}</div><div class="question-capture-tabs"><button class="question-capture-tab ${draft.captureMode === 'build' ? 'selected' : ''}" type="button" data-action="question-capture" data-capture-mode="build">拼图卡</button><button class="question-capture-tab ${draft.captureMode === 'draw' ? 'selected' : ''}" type="button" data-action="question-capture" data-capture-mode="draw">画出来</button><button class="question-capture-tab ${draft.captureMode === 'voice' ? 'selected' : ''}" type="button" data-action="question-capture" data-capture-mode="voice">说出来</button></div>${capture}</section></div>`;
   }
 
   function renderSubject(subjectId) {
@@ -514,6 +701,15 @@
       ${feedbackMarkup(progress)}`;
   }
 
+  function renderMatch(scene, progress) {
+    const activity = scene.activity;
+    return `
+      <div class="instruction-row"><button class="read-button" type="button" data-say="${escapeHTML(activity.say || activity.prompt)}">先听声音卡</button><p>先点一张声音卡，再点一张图片词卡，把它们连成朋友。</p></div>
+      <div class="match-grid"><section class="match-column"><h3>声音卡</h3>${activity.leftCards.map((card) => `<button class="match-card ${progress.selectedMatchLeft === card.id ? 'selected' : ''}" type="button" data-action="match-left" data-match-id="${card.id}" data-say="${escapeHTML(card.say || card.label)}"><b>${escapeHTML(card.label)}</b><span>点一下听，再选它。</span></button>`).join('')}</section><section class="match-column"><h3>图片词卡</h3>${activity.rightCards.map((card) => `<button class="match-card ${progress.selectedMatchRight === card.id ? 'selected' : ''}" type="button" data-action="match-right" data-match-id="${card.id}"><b>${escapeHTML(card.label)}</b><span>${escapeHTML(card.detail)}</span></button>`).join('')}</section></div>
+      <p class="helper-text">连错也没关系。小通只会请你再听一遍、再换一张卡看看。</p>
+      ${feedbackMarkup(progress)}`;
+  }
+
   function renderSequence(scene, progress) {
     const activity = scene.activity;
     const order = progress.sequence || activity.cards.slice();
@@ -549,6 +745,7 @@
     const activityBody = {
       balance: renderBalance,
       choice: renderChoice,
+      match: renderMatch,
       sequence: renderSequence,
       build: renderBuild,
       draw: renderDraw,
@@ -635,7 +832,7 @@
     ];
     return `
       <h2>留下一颗发现种子</h2><p>选一句最像你的想法的话。它会留在发现册里，成为下一次任务的入口。</p>
-      <div class="seed-grid"><section class="seed-card"><h3>我想留下一个问题</h3><p>问题不用写得很完整，选一句或请家长帮你记下原话。</p><div class="question-starters">${starters.map((starter) => `<button class="question-starter" type="button" data-action="seed-question" data-scene-id="${scene.id}" data-question="${escapeHTML(starter)}">${escapeHTML(starter)}</button>`).join('')}</div></section><section class="offline-card"><h3>离开屏幕试一试</h3><p>${escapeHTML(scene.realWorld)}</p><button class="button button-green small-button" type="button" data-action="seed-offline" data-scene-id="${scene.id}">我想去试试</button><p class="sr-only">选择后不会要求上传照片。</p></section></div>
+      <div class="seed-grid"><section class="seed-card"><h3>我想留下一个问题</h3><p>问题不用写得很完整。可以选一句，也可以用图卡拼、画出来或说给小通听。</p><div class="question-starters">${starters.map((starter) => `<button class="question-starter" type="button" data-action="seed-question" data-scene-id="${scene.id}" data-question="${escapeHTML(starter)}">${escapeHTML(starter)}</button>`).join('')}</div><button class="button button-secondary small-button" type="button" data-action="open-question-workshop" data-scene-id="${scene.id}">我想自己做一个问题</button></section><section class="offline-card"><h3>离开屏幕试一试</h3><p>${escapeHTML(scene.realWorld)}</p><button class="button button-green small-button" type="button" data-action="seed-offline" data-scene-id="${scene.id}">我想去试试</button><p class="sr-only">选择后不会要求上传照片。</p></section></div>
       <div class="stage-footer"><button class="button button-quiet" type="button" data-action="mission-prev" data-scene-id="${scene.id}">回去再看看</button><button class="button button-secondary" type="button" data-route="discoveries">打开我的发现册</button></div>`;
   }
 
@@ -675,8 +872,13 @@
     return `
       <div class="page-wrap"><div class="section-heading"><div><h2>我的发现册</h2><p>这里不写分数。它只记得：你试过什么、讲过什么、还想问什么。</p></div><button class="button button-secondary small-button" type="button" data-route="home">再选一个任务</button></div>
         <div class="discoveries-layout"><section class="discovery-map"><h1>我正在长出的想法</h1><p>颜色是路标，不是好坏。每条路都可以慢慢走。</p><div class="concept-list">${groups.map(({subject, concepts}) => concepts.map((concept) => { const status = conceptStatus(concept.id); return `<article class="concept-card ${status.code}"><i class="concept-dot" aria-hidden="true"></i><div><b>${escapeHTML(concept.childLabel)}</b><span>${escapeHTML(status.detail)}</span></div><small>${escapeHTML(status.label)}</small></article>`; }).join('')).join('')}</div></section>
-          <aside>${renderQuestionLine(false)}${waitingReviews.length ? `<section class="question-line"><h2>过几天再见面</h2><p>这些不是作业。等时间到了，小通会换一个故事问你。</p><div class="question-feed">${waitingReviews.map((review) => { const scene = content.sceneById[review.sceneId]; const days = Math.max(0, Math.ceil((review.dueAt - Date.now()) / DAY)); return `<article class="question-item"><b>${escapeHTML(scene.title)}</b><p>${days > 0 ? `大约 ${days} 天后再来看看` : '已经可以回来换一个故事试试'}</p>${days === 0 ? `<button class="text-button" type="button" data-route="review/${scene.id}">打开回访卡</button>` : ''}</article>`; }).join('')}</div></section>` : ''}</aside>
+          <aside>${renderQuestionLine(false)}${renderEnglishTreasureBook()}${waitingReviews.length ? `<section class="question-line"><h2>过几天再见面</h2><p>这些不是作业。等时间到了，小通会换一个故事问你。</p><div class="question-feed">${waitingReviews.map((review) => { const scene = content.sceneById[review.sceneId]; const days = Math.max(0, Math.ceil((review.dueAt - Date.now()) / DAY)); return `<article class="question-item"><b>${escapeHTML(scene.title)}</b><p>${days > 0 ? `大约 ${days} 天后再来看看` : '已经可以回来换一个故事试试'}</p>${days === 0 ? `<button class="text-button" type="button" data-route="review/${scene.id}">打开回访卡</button>` : ''}</article>`; }).join('')}</div></section>` : ''}</aside>
         </div></div>`;
+  }
+
+  function renderEnglishTreasureBook() {
+    const treasures = state.treasures.filter((item) => item.subject === 'english');
+    return `<section class="treasure-book"><h2>英语宝物册</h2><p>只有在新故事里真的用过的词，才会来到这里。</p><div class="treasure-list">${treasures.length ? treasures.map((item) => `<article class="treasure-item"><b>${escapeHTML(item.word)}</b><span>${escapeHTML(item.meaning)}</span><small>${escapeHTML(item.note)}</small></article>`).join('') : '<div class="empty-state">先去听、说、做一个英语任务。换个故事还能用上时，宝物就会出现。</div>'}</div></section>`;
   }
 
   function projectProgress(project) {
@@ -703,6 +905,14 @@
     if (dueReview) {
       const scene = content.sceneById[dueReview.sceneId];
       return { title: `打开「${scene.title}」回访卡`, reason: '这不是测验：隔几天后换一个故事，能帮助我们看见这个办法是否还能出现。' };
+    }
+    const childQuestion = state.questions.slice().reverse().find((item) => item.status !== 'visited' && content.inquiryTrailByScene[item.sceneId]);
+    if (childQuestion) {
+      const trail = content.inquiryTrailByScene[childQuestion.sceneId];
+      const nextScene = [...trail.nextSceneIds, childQuestion.sceneId].map((sceneId) => content.sceneById[sceneId]).find(Boolean);
+      if (nextScene) {
+        return { title: nextScene.title, reason: `这只是下一步假设：孩子留下了“${childQuestion.text}”。先换到相关的小故事继续看，不把问题当作答题任务。` };
+      }
     }
     const interests = state.profile.interestThemes || [];
     const schoolWords = String(state.profile.schoolTopic || '').replace(/\s+/g, '');
@@ -745,7 +955,7 @@
       <div class="parent-grid"><section class="parent-section"><h2>发生了什么</h2><p>每条记录都能追溯到一次具体交互，而不是一个汇总分数。</p><div class="evidence-list">${evidence.length ? evidence.map((item) => { const scene = content.sceneById[item.sceneId]; return `<article class="evidence-row"><div class="evidence-meta"><span>${escapeHTML(content.subjectById[item.subject].name)}</span><span>${escapeHTML(scene.title)}</span><span>${escapeHTML(item.phase)}</span><span>${item.prompted ? '有提示' : '独立尝试'}</span></div><p>${escapeHTML(item.summary || item.note)}</p><small>仍不确定：${escapeHTML(item.unknown || '需要更多场景观察。')} · 建议：${escapeHTML(item.recommendation || '换一种表示再试一次。')}</small></article>`; }).join('') : '<div class="empty-state">还没有互动证据。孩子完成第一场探索后，这里才会出现记录。</div>'}</div></section>
       <aside class="parent-section"><h2>我们还不知道什么</h2><p>未知不是失败，而是下一次验证的方向。</p><div class="unknown-list">${unknowns.map(({concept, status}) => `<article class="unknown-row"><b>${escapeHTML(concept.label)}</b><span>${escapeHTML(status.detail)}</span></article>`).join('')}</div><div class="next-step-card"><b>系统的下一步假设：${escapeHTML(recommended.title)}</b><p>${escapeHTML(recommended.reason)}</p></div></aside></div>
       <div class="parent-grid" style="margin-top:20px"><section class="parent-section"><h2>家长设置</h2><p>这些设置只保存在本机。语音与图片不会默认上传。</p><div class="settings-grid"><label>教材/方向<select data-setting="textbook"><option ${state.profile.textbook === '按兴趣探索' ? 'selected' : ''}>按兴趣探索</option><option ${state.profile.textbook === '人教版' ? 'selected' : ''}>人教版</option><option ${state.profile.textbook === '部编版' ? 'selected' : ''}>部编版</option><option ${state.profile.textbook === '其他教材' ? 'selected' : ''}>其他教材</option></select></label><label>学校正在学什么<input data-setting="schoolTopic" value="${escapeHTML(state.profile.schoolTopic)}" placeholder="例如：10以内加减" /></label><label>每次屏幕探索分钟数<select data-setting="screenMinutes"><option value="12" ${state.profile.screenMinutes === 12 ? 'selected' : ''}>12 分钟</option><option value="15" ${state.profile.screenMinutes === 15 ? 'selected' : ''}>15 分钟</option><option value="18" ${state.profile.screenMinutes === 18 ? 'selected' : ''}>18 分钟</option></select></label><label>孩子名字<input data-setting="name" value="${escapeHTML(state.profile.name)}" /></label></div><div class="interest-settings"><b>孩子最近想探索什么</b><p>这些只是下一步推荐的线索，不会锁住学习路径。</p><div class="interest-chips">${themeOptions.map((theme) => `<button class="interest-chip ${(state.profile.interestThemes || []).includes(theme) ? 'selected' : ''}" type="button" data-action="toggle-interest" data-interest="${theme}" aria-pressed="${(state.profile.interestThemes || []).includes(theme)}">${theme}</button>`).join('')}</div></div><div class="switch-row"><label><input type="checkbox" data-setting="voicePermission" ${state.profile.voicePermission ? 'checked' : ''} /> 允许孩子主动使用本地录音</label><span>默认关闭</span></div><div class="switch-row"><label><input type="checkbox" data-setting="reducedMotion" ${state.profile.reducedMotion ? 'checked' : ''} /> 减少动效</label><span>更舒适地看屏幕</span></div><button class="text-button" type="button" data-action="open-privacy">查看本地数据与隐私说明</button><div class="danger-zone"><button class="button danger-button small-button" type="button" data-action="delete-data">删除这台电脑上的全部学习数据</button></div></section>
-      <section class="parent-section"><h2>孩子的问题线</h2><p>不要急着给答案。可以先问：“你为什么会这样想？”</p><div class="question-feed">${state.questions.length ? state.questions.slice(-8).reverse().map((item) => `<article class="question-item"><b>${escapeHTML(content.subjectById[item.subject].name)} · ${escapeHTML(content.sceneById[item.sceneId]?.title || '自由问题')}</b><p>“${escapeHTML(item.text)}”</p></article>`).join('') : '<div class="empty-state">暂时没有保存的问题。孩子可以在任务最后选问题卡，也可以由家长代记原话。</div>'}</div></section></div>
+      <section class="parent-section"><h2>孩子的问题线</h2><p>不要急着给答案。这里会保留问题来自哪里、关心什么，以及后来有没有被带进新的场景。</p><div class="question-feed">${state.questions.length ? state.questions.slice(-8).reverse().map((item) => renderQuestionItem(item, true)).join('') : '<div class="empty-state">暂时没有保存的问题。孩子可以在任务最后选问题卡，也可以在问题工坊里拼、画或说出一个问题。</div>'}</div></section></div>
       </div>`;
   }
 
@@ -762,6 +972,7 @@
       : route.name === 'discoveries' ? renderDiscoveries()
       : route.name === 'projects' ? renderProjects()
       : route.name === 'parent' ? renderParent()
+      : route.name === 'question-workshop' ? renderQuestionWorkshop()
       : route.name === 'mission' ? renderMission(route.sceneId)
       : route.name === 'review' ? renderReview(route.sceneId)
       : renderHome();
@@ -769,6 +980,7 @@
     updateSessionUI();
     const activeScene = route.name === 'mission' ? content.sceneById[route.sceneId] : null;
     if (activeScene && (activeScene.activity.kind === 'draw' || (sceneProgress(activeScene.id).stage === 1 && sceneProgress(activeScene.id).expressionMode === 'draw'))) setupCanvas(activeScene.id);
+    if (route.name === 'question-workshop' && getQuestionDraft().captureMode === 'draw') setupQuestionCanvas();
   }
 
   function setFeedback(sceneId, message, good = false) {
@@ -833,6 +1045,7 @@
     const nextStep = {
       balance: '先把一边的一块，和另一边的一块配成朋友，再看看有没有落单的。',
       choice: '先把每张卡最明显的图或第一个声音慢慢看、听一遍。',
+      match: '先只听一张声音卡，再找一张你觉得最像它的图片词卡。',
       sequence: '先找一张你觉得“故事刚开始”时才会出现的卡。',
       build: '先问一问：这个地方最需要遮挡、支撑，还是让人走过去？',
       draw: '先只画一个人、一个物品或一个地点，不用一下画完整故事。',
@@ -874,6 +1087,34 @@
     } else {
       addEvidence({ scene, phase: 'explore', representation: scene.subject === 'english' || scene.id === 'chinese-sound-lab' ? '声音' : '图', prompted: true, note: `孩子选择“${option.label}”。`, outcome: '需要再看', misconception: option.misconception || '这个场景下的想法还不确定。' });
       setFeedback(sceneId, option.misconception || '这个选择很有意思。我们再用图或声音慢慢看看。');
+    }
+    saveState();
+    render();
+  }
+
+  function chooseMatch(sceneId, side, cardId) {
+    const scene = content.sceneById[sceneId];
+    if (!scene || scene.activity.kind !== 'match') return;
+    const progress = sceneProgress(sceneId);
+    const activity = scene.activity;
+    if (side === 'left' && !activity.leftCards.some((card) => card.id === cardId)) return;
+    if (side === 'right' && !activity.rightCards.some((card) => card.id === cardId)) return;
+    if (side === 'left') progress.selectedMatchLeft = cardId;
+    else progress.selectedMatchRight = cardId;
+    recordOperation(sceneId, `把${side === 'left' ? '声音' : '图片词'}卡“${cardId}”放到连线桌上。`);
+    if (progress.selectedMatchLeft && progress.selectedMatchRight) {
+      const right = activity.rightCards.find((card) => card.id === progress.selectedMatchRight);
+      const pairKey = `${progress.selectedMatchLeft}|${progress.selectedMatchRight}`;
+      if (right?.correctWith === progress.selectedMatchLeft) {
+        completeExplore(scene, { representation: '声音', note: `孩子把声音卡“${progress.selectedMatchLeft}”和图片词卡“${right.label}”连成朋友。`, prompted: progress.hints > 0 });
+        setFeedback(sceneId, '这两张卡成朋友啦。小通想听你说说：你是从声音、图，还是自己的记忆里发现的？', true);
+      } else if (progress.lastMatchKey !== pairKey) {
+        progress.lastMatchKey = pairKey;
+        addEvidence({ scene, phase: 'explore', representation: '声音', prompted: true, note: `孩子尝试把“${progress.selectedMatchLeft}”连到“${right?.label || '一张图片词卡'}”。`, outcome: '需要再看', misconception: right?.misconception || '声音和图片词的连接还需要慢一点再听一次。' });
+        setFeedback(sceneId, right?.misconception || '这次连线很有意思。我们只重听这一张声音卡，再看看图卡。');
+      }
+    } else {
+      setFeedback(sceneId, '现在再选另一边的一张卡，把它们连成朋友。');
     }
     saveState();
     render();
@@ -1026,10 +1267,17 @@
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       runtime.mediaChunks = [];
+      runtime.discardSceneRecording = false;
       runtime.mediaRecorder = new MediaRecorder(stream);
       runtime.recordingStartedAt = Date.now();
       runtime.mediaRecorder.ondataavailable = (event) => { if (event.data.size) runtime.mediaChunks.push(event.data); };
       runtime.mediaRecorder.onstop = () => {
+        if (runtime.discardSceneRecording) {
+          runtime.mediaRecorder.stream.getTracks().forEach((track) => track.stop());
+          runtime.mediaRecorder = null;
+          runtime.discardSceneRecording = false;
+          return;
+        }
         const blob = new Blob(runtime.mediaChunks, { type: runtime.mediaRecorder.mimeType || 'audio/webm' });
         if (runtime.recordingUrl) URL.revokeObjectURL(runtime.recordingUrl);
         runtime.recordingUrl = URL.createObjectURL(blob);
@@ -1182,12 +1430,227 @@
     render();
   }
 
+  function saveQuestion({ sceneId, text, source = '问题工坊', mode = 'why', drawingData = null, audioSessionId = null }) {
+    const scene = content.sceneById[sceneId] || content.scenes[0];
+    const trail = content.inquiryTrailByScene[scene.id];
+    const question = {
+      id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      sceneId: scene.id,
+      subject: scene.subject,
+      text,
+      at: Date.now(),
+      source,
+      mode,
+      tags: trail?.tags || [],
+      status: 'open',
+      drawingData,
+      audioSessionId
+    };
+    state.questions.push(question);
+    state.questions = state.questions.slice(-60);
+    saveState();
+    return question;
+  }
+
+  function openQuestionWorkshop(sceneId) {
+    const draft = getQuestionDraft();
+    if (sceneId && content.sceneById[sceneId]) {
+      draft.sceneId = sceneId;
+      draft.pieceIndex = 0;
+    }
+    draft.captureMode = 'build';
+    draft.drawingData = null;
+    saveState();
+    setRoute('question-workshop');
+  }
+
+  function setQuestionContext(sceneId) {
+    if (!content.sceneById[sceneId]) return;
+    const draft = getQuestionDraft();
+    draft.sceneId = sceneId;
+    draft.pieceIndex = 0;
+    saveState();
+    render();
+  }
+
+  function setQuestionMode(mode) {
+    if (!questionModes().some(([id]) => id === mode)) return;
+    const draft = getQuestionDraft();
+    draft.mode = mode;
+    saveState();
+    render();
+  }
+
+  function setQuestionPiece(index) {
+    const draft = getQuestionDraft();
+    const trail = content.inquiryTrailByScene[draft.sceneId];
+    const pieceIndex = Number(index);
+    if (!Number.isInteger(pieceIndex) || pieceIndex < 0 || pieceIndex >= trail.pieces.length) return;
+    draft.pieceIndex = pieceIndex;
+    saveState();
+    render();
+  }
+
+  function setQuestionCapture(mode) {
+    if (!['build', 'draw', 'voice'].includes(mode)) return;
+    const draft = getQuestionDraft();
+    draft.captureMode = mode;
+    saveState();
+    render();
+  }
+
+  function saveBuiltQuestion() {
+    const draft = getQuestionDraft();
+    const question = saveQuestion({ sceneId: draft.sceneId, text: questionTextForDraft(draft), source: '图卡拼问题', mode: draft.mode });
+    announce('这个问题已经放进发现册。下次可以用它继续探索。');
+    render();
+    return question;
+  }
+
+  function followQuestion(questionId) {
+    const question = state.questions.find((item) => item.id === questionId);
+    if (!question) return;
+    const trail = content.inquiryTrailByScene[question.sceneId];
+    const candidates = [...(trail?.nextSceneIds || []), question.sceneId];
+    const sceneId = candidates.find((id) => content.sceneById[id] && !sceneProgress(id).completedAt) || candidates.find((id) => content.sceneById[id]);
+    if (!sceneId) {
+      announce('小通先把这个问题留在发现册里。下次我们可以从它开始。');
+      return;
+    }
+    question.status = 'following';
+    question.followedAt = Date.now();
+    saveState();
+    setRoute(`mission/${sceneId}`);
+    announce('小通带着你的问题，换到一个新故事里继续看。');
+  }
+
+  function markQuestionsVisitedByScene(sceneId) {
+    state.questions.forEach((question) => {
+      const trail = content.inquiryTrailByScene[question.sceneId];
+      if (question.status === 'following' && (question.sceneId === sceneId || trail?.nextSceneIds?.includes(sceneId))) {
+        question.status = 'visited';
+        question.visitedAt = Date.now();
+      }
+    });
+  }
+
+  function setupQuestionCanvas() {
+    const canvas = document.querySelector('#question-canvas');
+    if (!canvas) return;
+    runtime.questionCanvas = canvas;
+    const context = canvas.getContext('2d');
+    runtime.questionDrawingContext = context;
+    context.lineCap = 'round';
+    context.lineJoin = 'round';
+    context.strokeStyle = '#7a5bd6';
+    context.lineWidth = 7;
+    const draft = getQuestionDraft();
+    if (draft.drawingData) {
+      const image = new Image();
+      image.onload = () => context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      image.src = draft.drawingData;
+    }
+    const point = (event) => {
+      const rect = canvas.getBoundingClientRect();
+      return { x: (event.clientX - rect.left) * (canvas.width / rect.width), y: (event.clientY - rect.top) * (canvas.height / rect.height) };
+    };
+    canvas.addEventListener('pointerdown', (event) => {
+      runtime.questionDrawing = true;
+      canvas.setPointerCapture(event.pointerId);
+      const p = point(event);
+      context.beginPath();
+      context.moveTo(p.x, p.y);
+    });
+    canvas.addEventListener('pointermove', (event) => {
+      if (!runtime.questionDrawing) return;
+      const p = point(event);
+      context.lineTo(p.x, p.y);
+      context.stroke();
+    });
+    const end = () => { runtime.questionDrawing = false; };
+    canvas.addEventListener('pointerup', end);
+    canvas.addEventListener('pointercancel', end);
+  }
+
+  function clearQuestionDrawing() {
+    const canvas = runtime.questionCanvas;
+    const context = runtime.questionDrawingContext;
+    if (!canvas || !context) return;
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    getQuestionDraft().drawingData = null;
+    saveState();
+  }
+
+  function saveQuestionDrawing() {
+    const canvas = runtime.questionCanvas;
+    if (!canvas) {
+      announce('画板还没准备好。请再试一次。');
+      return;
+    }
+    const draft = getQuestionDraft();
+    const scene = content.sceneById[draft.sceneId];
+    const drawingData = canvas.toDataURL('image/png');
+    saveQuestion({ sceneId: scene.id, text: `我画了一张关于“${scene.title}”的疑问图。`, source: '问题画', mode: 'draw', drawingData });
+    draft.drawingData = null;
+    draft.captureMode = 'build';
+    saveState();
+    announce('这张问题画已经放进发现册。小通不会要求上传它。');
+    render();
+  }
+
+  async function startQuestionRecording() {
+    if (!state.profile.voicePermission) {
+      announce('录音默认关闭。可以先用图卡或画图；需要录音时请家长在家长入口开启。');
+      return;
+    }
+    if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+      announce('这台电脑暂时不能录音。你仍然可以用图卡或画图留下问题。');
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      runtime.questionMediaChunks = [];
+      runtime.discardQuestionRecording = false;
+      runtime.questionMediaRecorder = new MediaRecorder(stream);
+      runtime.questionRecordingStartedAt = Date.now();
+      runtime.questionMediaRecorder.ondataavailable = (event) => { if (event.data.size) runtime.questionMediaChunks.push(event.data); };
+      runtime.questionMediaRecorder.onstop = () => {
+        if (runtime.discardQuestionRecording) {
+          runtime.questionMediaRecorder.stream.getTracks().forEach((track) => track.stop());
+          runtime.questionMediaRecorder = null;
+          runtime.discardQuestionRecording = false;
+          return;
+        }
+        const blob = new Blob(runtime.questionMediaChunks, { type: runtime.questionMediaRecorder.mimeType || 'audio/webm' });
+        if (runtime.questionRecordingUrl) URL.revokeObjectURL(runtime.questionRecordingUrl);
+        const audioSessionId = `question-audio-${Date.now()}`;
+        runtime.questionRecordingUrl = URL.createObjectURL(blob);
+        runtime.questionRecordingId = audioSessionId;
+        const draft = getQuestionDraft();
+        const scene = content.sceneById[draft.sceneId];
+        const seconds = Math.max(1, Math.round((Date.now() - runtime.questionRecordingStartedAt) / 1000));
+        saveQuestion({ sceneId: scene.id, text: `我说了一个关于“${scene.title}”的问题（${seconds} 秒本机录音）。`, source: '本机录音问题', mode: 'voice', audioSessionId });
+        runtime.questionMediaRecorder.stream.getTracks().forEach((track) => track.stop());
+        runtime.questionMediaRecorder = null;
+        saveState();
+        render();
+        announce('这个问题只留在本次浏览器会话里，可以回听，不会自动上传。');
+      };
+      runtime.questionMediaRecorder.start();
+      render();
+    } catch {
+      announce('没有拿到麦克风权限。你仍然可以用图卡或画图留下问题。');
+    }
+  }
+
+  function stopQuestionRecording() {
+    if (runtime.questionMediaRecorder?.state === 'recording') runtime.questionMediaRecorder.stop();
+  }
+
   function saveFreeQuestion() {
     const text = document.querySelector('#free-question')?.value.trim();
     if (!text) { announce('先把想问的话说出来或请家长代记。'); return; }
-    state.questions.push({ id: `${Date.now()}`, sceneId: 'free', subject: 'chinese', text, at: Date.now(), source: '自由问题' });
-    state.questions = state.questions.slice(-60);
-    saveState();
+    saveQuestion({ sceneId: 'chinese-story-director', text, source: '家长代记原话', mode: 'free' });
     announce('这句话已经放进发现册。下次可以从它开始探索。');
     render();
   }
@@ -1218,6 +1681,19 @@
     if (!confirmed) return;
     localStorage.removeItem(STORAGE_KEY);
     if (runtime.recordingUrl) URL.revokeObjectURL(runtime.recordingUrl);
+    if (runtime.questionRecordingUrl) URL.revokeObjectURL(runtime.questionRecordingUrl);
+    if (runtime.mediaRecorder?.state === 'recording') {
+      runtime.discardSceneRecording = true;
+      runtime.mediaRecorder.stop();
+    }
+    if (runtime.questionMediaRecorder?.state === 'recording') {
+      runtime.discardQuestionRecording = true;
+      runtime.questionMediaRecorder.stop();
+    }
+    runtime.recordingUrl = null;
+    runtime.recordingSceneId = null;
+    runtime.questionRecordingUrl = null;
+    runtime.questionRecordingId = null;
     state = defaultState();
     announce('这台电脑上的学习数据已经删除。');
     setRoute('home');
@@ -1260,7 +1736,8 @@
     const route = parseRoute();
     const sceneId = actionNode.dataset.sceneId || route.sceneId;
     switch (action) {
-      case 'toggle-sound': state.profile.sound = !state.profile.sound; saveState(); render(); if (state.profile.sound) speak('声音提示已经打开。'); break;
+      case 'toggle-sound': toggleSound(); break;
+      case 'speech-control': controlSpeech(); break;
       case 'toggle-pause': state.session.paused = !state.session.paused; saveState(); render(); announce(state.session.paused ? '已经暂停。去看看远处，回来时会从这里继续。' : '欢迎回来，我们慢慢继续。'); break;
       case 'open-parent': openParentGate(); break;
       case 'close-parent-gate': parentGate.close(); break;
@@ -1274,6 +1751,8 @@
       case 'balance-hint': useBalanceHint(sceneId); break;
       case 'support-step': useSupport(sceneId, actionNode.dataset.support); break;
       case 'choice-answer': chooseOption(sceneId, actionNode.dataset.answerId); break;
+      case 'match-left': chooseMatch(sceneId, 'left', actionNode.dataset.matchId); break;
+      case 'match-right': chooseMatch(sceneId, 'right', actionNode.dataset.matchId); break;
       case 'sequence-select': selectSequence(sceneId, actionNode.dataset.index); break;
       case 'sequence-move': moveSequence(sceneId, actionNode.dataset.direction); break;
       case 'sequence-confirm': confirmSequence(sceneId); break;
@@ -1297,6 +1776,17 @@
       case 'review-answer': completeDelayedReview(content.sceneById[sceneId], actionNode.dataset.answer); break;
       case 'seed-question': completeSeed(content.sceneById[sceneId], actionNode.dataset.question, 'question'); break;
       case 'seed-offline': completeSeed(content.sceneById[sceneId], content.sceneById[sceneId].realWorld, 'offline'); break;
+      case 'open-question-workshop': openQuestionWorkshop(actionNode.dataset.sceneId); break;
+      case 'question-context': setQuestionContext(actionNode.dataset.sceneId); break;
+      case 'question-mode': setQuestionMode(actionNode.dataset.questionMode); break;
+      case 'question-piece': setQuestionPiece(actionNode.dataset.pieceIndex); break;
+      case 'question-capture': setQuestionCapture(actionNode.dataset.captureMode); break;
+      case 'question-save': saveBuiltQuestion(); break;
+      case 'question-followup': followQuestion(actionNode.dataset.questionId); break;
+      case 'question-draw-clear': clearQuestionDrawing(); break;
+      case 'question-draw-save': saveQuestionDrawing(); break;
+      case 'question-record-start': startQuestionRecording(); break;
+      case 'question-record-stop': stopQuestionRecording(); break;
       case 'save-free-question': saveFreeQuestion(); break;
       case 'project-start': startProject(actionNode.dataset.projectId); break;
       case 'take-break': state.session.paused = true; state.session.breakOpen = false; saveState(); render(); announce('好，去活动一下。回来后可以继续。'); break;

@@ -38,16 +38,25 @@ const sceneIds = [
 expect(sceneIds.every((id) => content.sceneById[id]), 'One or more named teaching scenes are missing.');
 expect(content.projects.length === 3, 'Expected three cross-subject projects.');
 expect(['project-picnic', 'project-rescue', 'project-museum'].every((id) => content.projects.some((item) => item.id === id)), 'Named projects are missing.');
+expect(content.projects.every((project) => new Set(project.steps.map((step) => content.sceneById[step.sceneId]?.subject)).size === 3), 'Every project must connect all three subjects.');
+const balance = content.sceneById['math-balance'];
+expect(balance.misconceptions?.length >= 2, 'Balance mission needs two misconception hypotheses.');
+expect(['one', 'split', 'draw'].every((method) => app.includes(`data-method="${method}"`)), 'Balance mission needs three valid starting strategies.');
+expect(content.scenes.every((scene) => scene.realWorld && scene.seed && scene.representations?.length >= 3), 'Every scene needs a real-world challenge, a discovery seed, and multiple representations.');
 
 const requiredAppContracts = [
   'selfLearningMasterV2', 'localStorage', 'MediaRecorder', 'SpeechSynthesisUtterance',
   'completeExplore', 'completeExpression', 'completeTransfer', 'completeDelayedReview',
   'evidenceGuidance', 'data-drag-block', 'draw-alternative', 'toggle-pause',
-  'data-hold-parent', 'delete-data', 'review-answer', 'renderParent'
+  'data-hold-parent', 'delete-data', 'review-answer', 'renderParent',
+  'summary:', 'unknown:', 'recommendation:', 'operationLog', 'renderOperationReplay',
+  'recording-replay', 'toggle-interest', 'interestThemes', 'breakEvery = 8 * 60'
 ];
 const missingContracts = requiredAppContracts.filter((token) => !app.includes(token));
 expect(!missingContracts.length, `Missing interaction/data contracts: ${missingContracts.join(', ')}`);
 expect(!/\b(fetch|XMLHttpRequest|sendBeacon)\s*\(/.test(app), 'The child experience must not upload learning data by default.');
+expect(app.includes('<audio controls') && app.includes('runtime.recordingUrl'), 'Child recordings need a local replay path.');
+expect(!/排行榜|连续答对|金币|限时抢答/.test(app), 'The child experience must not include competitive reward mechanics.');
 
 const requiredHtml = ['data.js', 'app.js', 'live-region', 'parent-gate', 'privacy-dialog', 'skip-link'];
 const missingHtml = requiredHtml.filter((token) => !html.includes(token));
@@ -59,5 +68,5 @@ console.log(JSON.stringify({
   subjects: content.subjects.length,
   scenes: content.scenes.length,
   projects: content.projects.length,
-  checked: ['content model', 'five-stage evidence hooks', 'local-only privacy', 'sound/voice fallback', 'drag click alternative', 'parent gate/delete', 'keyboard/motion styles']
+  checked: ['content model', 'three-subject projects', 'five-stage evidence hooks', 'multi-representation evidence', 'local-only privacy', 'sound/voice/replay fallback', 'drag click alternative', 'parent interest settings', 'parent gate/delete', 'keyboard/motion styles']
 }, null, 2));

@@ -14,6 +14,7 @@
     mediaChunks: [],
     recordingStartedAt: 0,
     recordingUrl: null,
+    recordingSceneId: null,
     holdTimer: null,
     toastTimer: null
   };
@@ -137,6 +138,8 @@
         selectedSentence: null,
         drawingData: null,
         recorded: false,
+        operationLog: [],
+        showReplay: false,
         transferAnswer: null,
         feedback: '',
         completedAt: null
@@ -224,6 +227,15 @@
     return record;
   }
 
+  function recordOperation(sceneId, description) {
+    const progress = sceneProgress(sceneId);
+    progress.operationLog = [...(progress.operationLog || []), {
+      id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      at: Date.now(),
+      description
+    }].slice(-8);
+  }
+
   function completeExplore(scene, { representation, note, prompted = false }) {
     const progress = sceneProgress(scene.id);
     if (!progress.exploreComplete) {
@@ -253,6 +265,7 @@
     const progress = sceneProgress(scene.id);
     const activity = scene.activity;
     progress.transferAnswer = answer;
+    recordOperation(scene.id, `在新故事里选择“${answer}”。`);
     if (answer === activity.correct) {
       progress.transferComplete = true;
       progress.stage = Math.max(progress.stage, 3);
@@ -562,13 +575,25 @@
       ${progress.expressionMode === 'cards' ? `<div class="sentence-options">${sentences.map((sentence) => `<button class="sentence-option ${progress.selectedSentence === sentence ? 'selected' : ''}" type="button" data-action="sentence-choose" data-sentence="${escapeHTML(sentence)}">${escapeHTML(sentence)}</button>`).join('')}</div>` : ''}
       ${progress.expressionMode === 'voice' ? renderVoicePanel(scene, progress) : ''}
       ${progress.expressionMode === 'draw' ? renderDraw(scene, progress, 'expression') : ''}
+      ${renderOperationReplay(scene, progress)}
       ${feedbackMarkup(progress)}
       <div class="stage-footer"><button class="button button-quiet" type="button" data-action="mission-prev" data-scene-id="${scene.id}">回到刚才的任务</button><button class="button button-primary" type="button" data-action="expression-confirm" data-scene-id="${scene.id}">我已经表达了，换个故事试试</button></div>`;
   }
 
   function renderVoicePanel(scene, progress) {
     const recording = runtime.mediaRecorder && runtime.mediaRecorder.state === 'recording';
-    return `<div class="recording-status"><b>语音只在你按下录音后才会使用麦克风。</b><p>${recording ? '正在录音。说完后按“停下来”。' : progress.recorded ? '已经留下本次会话的本地录音。你也可以不用录音，改用想法卡或画图。' : '如果电脑不支持录音，也可以直接用想法卡或画图。'}</p><div class="hero-actions">${recording ? '<button class="button button-yellow small-button" type="button" data-action="record-stop">停下来</button>' : '<button class="button button-secondary small-button" type="button" data-action="record-start">开始本地录音</button>'}<button class="read-button" type="button" data-say="请告诉小通，你刚才是怎样想到的。">听提示</button></div></div>`;
+    const replay = progress.recorded && runtime.recordingUrl && runtime.recordingSceneId === scene.id
+      ? `<div class="recording-replay"><b>回听我刚才说的话</b><audio controls preload="metadata" src="${runtime.recordingUrl}">这台电脑不能播放这段录音。</audio><small>录音只留在这次浏览器会话；刷新或删除本机数据后不会保留。</small></div>`
+      : '';
+    return `<div class="recording-status"><b>语音只在你按下录音后才会使用麦克风。</b><p>${recording ? '正在录音。说完后按“停下来”。' : progress.recorded ? '已经留下本次会话的本地录音。你也可以不用录音，改用想法卡或画图。' : '如果电脑不支持录音，也可以直接用想法卡或画图。'}</p><div class="hero-actions">${recording ? '<button class="button button-yellow small-button" type="button" data-action="record-stop">停下来</button>' : '<button class="button button-secondary small-button" type="button" data-action="record-start">开始本地录音</button>'}<button class="read-button" type="button" data-say="请告诉小通，你刚才是怎样想到的。">听提示</button></div>${replay}</div>`;
+  }
+
+  function renderOperationReplay(scene, progress) {
+    const operations = progress.operationLog || [];
+    const canReplay = operations.length || progress.drawingData || (progress.recorded && runtime.recordingSceneId === scene.id && runtime.recordingUrl);
+    if (!canReplay) return '';
+    if (!progress.showReplay) return `<button class="text-button operation-replay-trigger" type="button" data-action="toggle-operation-replay" data-scene-id="${scene.id}">回看我刚才的办法</button>`;
+    return `<section class="operation-replay" aria-label="孩子刚才的操作回看"><div class="operation-replay-head"><div><h3>回看我刚才的办法</h3><p>不是重做一遍，只是看看你是怎么走到这里的。</p></div><button class="text-button" type="button" data-action="toggle-operation-replay" data-scene-id="${scene.id}">收起来</button></div>${operations.length ? `<ol>${operations.map((item) => `<li>${escapeHTML(item.description)}</li>`).join('')}</ol>` : ''}${progress.drawingData ? `<img class="replay-drawing" src="${progress.drawingData}" alt="孩子刚才留下的探索画" />` : ''}</section>`;
   }
 
   function renderTransfer(scene, progress) {
@@ -692,12 +717,13 @@
     const unknowns = getUnknowns();
     const recommended = nextRecommendation();
     const uniqueConcepts = new Set(state.evidence.flatMap((item) => item.concepts)).size;
+    const themeOptions = ['动物', '故事', '搭建', '音乐', '运动', '自然'];
     return `
       <div class="page-wrap parent-shell"><div class="parent-head"><div><h1>这段时间，孩子打开了哪些理解通道？</h1><p>只展示真实交互留下的证据、仍不确定的地方与下一步理由。没有总分，也不把“尚未观察”当成落后。</p></div><button class="button button-secondary small-button" type="button" data-route="home">回到儿童模式</button></div>
       <div class="metric-grid"><article class="metric"><strong>${state.evidence.length}</strong><b>条真实互动证据</b><span>来源于操作、图、语言、动作或迁移。</span></article><article class="metric"><strong>${uniqueConcepts}</strong><b>个概念被观察到</b><span>被观察到不等于已经掌握。</span></article><article class="metric"><strong>${state.questions.length}</strong><b>个孩子的问题</b><span>问题会成为后续任务线索。</span></article><article class="metric"><strong>${state.reviews.filter((review) => review.status === 'waiting').length}</strong><b>张延迟回访卡</b><span>会在 3 天后换故事再看。</span></article></div>
       <div class="parent-grid"><section class="parent-section"><h2>发生了什么</h2><p>每条记录都能追溯到一次具体交互，而不是一个汇总分数。</p><div class="evidence-list">${evidence.length ? evidence.map((item) => { const scene = content.sceneById[item.sceneId]; return `<article class="evidence-row"><div class="evidence-meta"><span>${escapeHTML(content.subjectById[item.subject].name)}</span><span>${escapeHTML(scene.title)}</span><span>${escapeHTML(item.phase)}</span><span>${item.prompted ? '有提示' : '独立尝试'}</span></div><p>${escapeHTML(item.summary || item.note)}</p><small>仍不确定：${escapeHTML(item.unknown || '需要更多场景观察。')} · 建议：${escapeHTML(item.recommendation || '换一种表示再试一次。')}</small></article>`; }).join('') : '<div class="empty-state">还没有互动证据。孩子完成第一场探索后，这里才会出现记录。</div>'}</div></section>
       <aside class="parent-section"><h2>我们还不知道什么</h2><p>未知不是失败，而是下一次验证的方向。</p><div class="unknown-list">${unknowns.map(({concept, status}) => `<article class="unknown-row"><b>${escapeHTML(concept.label)}</b><span>${escapeHTML(status.detail)}</span></article>`).join('')}</div><div class="next-step-card"><b>系统的下一步假设：${escapeHTML(recommended.title)}</b><p>${escapeHTML(recommended.reason)}</p></div></aside></div>
-      <div class="parent-grid" style="margin-top:20px"><section class="parent-section"><h2>家长设置</h2><p>这些设置只保存在本机。语音与图片不会默认上传。</p><div class="settings-grid"><label>教材/方向<select data-setting="textbook"><option ${state.profile.textbook === '按兴趣探索' ? 'selected' : ''}>按兴趣探索</option><option ${state.profile.textbook === '人教版' ? 'selected' : ''}>人教版</option><option ${state.profile.textbook === '部编版' ? 'selected' : ''}>部编版</option><option ${state.profile.textbook === '其他教材' ? 'selected' : ''}>其他教材</option></select></label><label>学校正在学什么<input data-setting="schoolTopic" value="${escapeHTML(state.profile.schoolTopic)}" placeholder="例如：10以内加减" /></label><label>每次屏幕探索分钟数<select data-setting="screenMinutes"><option value="12" ${state.profile.screenMinutes === 12 ? 'selected' : ''}>12 分钟</option><option value="15" ${state.profile.screenMinutes === 15 ? 'selected' : ''}>15 分钟</option><option value="18" ${state.profile.screenMinutes === 18 ? 'selected' : ''}>18 分钟</option></select></label><label>孩子名字<input data-setting="name" value="${escapeHTML(state.profile.name)}" /></label></div><div class="switch-row"><label><input type="checkbox" data-setting="voicePermission" ${state.profile.voicePermission ? 'checked' : ''} /> 允许孩子主动使用本地录音</label><span>默认关闭</span></div><div class="switch-row"><label><input type="checkbox" data-setting="reducedMotion" ${state.profile.reducedMotion ? 'checked' : ''} /> 减少动效</label><span>更舒适地看屏幕</span></div><button class="text-button" type="button" data-action="open-privacy">查看本地数据与隐私说明</button><div class="danger-zone"><button class="button danger-button small-button" type="button" data-action="delete-data">删除这台电脑上的全部学习数据</button></div></section>
+      <div class="parent-grid" style="margin-top:20px"><section class="parent-section"><h2>家长设置</h2><p>这些设置只保存在本机。语音与图片不会默认上传。</p><div class="settings-grid"><label>教材/方向<select data-setting="textbook"><option ${state.profile.textbook === '按兴趣探索' ? 'selected' : ''}>按兴趣探索</option><option ${state.profile.textbook === '人教版' ? 'selected' : ''}>人教版</option><option ${state.profile.textbook === '部编版' ? 'selected' : ''}>部编版</option><option ${state.profile.textbook === '其他教材' ? 'selected' : ''}>其他教材</option></select></label><label>学校正在学什么<input data-setting="schoolTopic" value="${escapeHTML(state.profile.schoolTopic)}" placeholder="例如：10以内加减" /></label><label>每次屏幕探索分钟数<select data-setting="screenMinutes"><option value="12" ${state.profile.screenMinutes === 12 ? 'selected' : ''}>12 分钟</option><option value="15" ${state.profile.screenMinutes === 15 ? 'selected' : ''}>15 分钟</option><option value="18" ${state.profile.screenMinutes === 18 ? 'selected' : ''}>18 分钟</option></select></label><label>孩子名字<input data-setting="name" value="${escapeHTML(state.profile.name)}" /></label></div><div class="interest-settings"><b>孩子最近想探索什么</b><p>这些只是下一步推荐的线索，不会锁住学习路径。</p><div class="interest-chips">${themeOptions.map((theme) => `<button class="interest-chip ${(state.profile.interestThemes || []).includes(theme) ? 'selected' : ''}" type="button" data-action="toggle-interest" data-interest="${theme}" aria-pressed="${(state.profile.interestThemes || []).includes(theme)}">${theme}</button>`).join('')}</div></div><div class="switch-row"><label><input type="checkbox" data-setting="voicePermission" ${state.profile.voicePermission ? 'checked' : ''} /> 允许孩子主动使用本地录音</label><span>默认关闭</span></div><div class="switch-row"><label><input type="checkbox" data-setting="reducedMotion" ${state.profile.reducedMotion ? 'checked' : ''} /> 减少动效</label><span>更舒适地看屏幕</span></div><button class="text-button" type="button" data-action="open-privacy">查看本地数据与隐私说明</button><div class="danger-zone"><button class="button danger-button small-button" type="button" data-action="delete-data">删除这台电脑上的全部学习数据</button></div></section>
       <section class="parent-section"><h2>孩子的问题线</h2><p>不要急着给答案。可以先问：“你为什么会这样想？”</p><div class="question-feed">${state.questions.length ? state.questions.slice(-8).reverse().map((item) => `<article class="question-item"><b>${escapeHTML(content.subjectById[item.subject].name)} · ${escapeHTML(content.sceneById[item.sceneId]?.title || '自由问题')}</b><p>“${escapeHTML(item.text)}”</p></article>`).join('') : '<div class="empty-state">暂时没有保存的问题。孩子可以在任务最后选问题卡，也可以由家长代记原话。</div>'}</div></section></div>
       </div>`;
   }
@@ -735,6 +761,7 @@
     const scene = content.sceneById[sceneId];
     const progress = sceneProgress(sceneId);
     progress.method = method;
+    recordOperation(sceneId, `选择“${method === 'one' ? '一个个放' : method === 'split' ? '先想 3 和 2' : '先画 5 个点'}”的办法。`);
     const messages = {
       one: '一个一个放完全是好办法。每放一块，都可以看看两边差多少。',
       split: '把 5 想成 3 和 2 是一种邀请。你也可以随时回到一个个放。',
@@ -754,6 +781,7 @@
     const progress = sceneProgress(sceneId);
     const target = scene.activity.target;
     progress.rightCount = Math.min(target + 2, progress.rightCount + amount);
+    recordOperation(sceneId, `${isGuess ? '先猜一猜并' : ''}在右边放 ${amount} 块，现在右边有 ${progress.rightCount} 块。`);
     if (progress.rightCount === target) {
       completeExplore(scene, { representation: progress.method === 'draw' ? '图' : '实物', note: `孩子用“${progress.method === 'split' ? '3 和 2 的分组' : progress.method === 'draw' ? '画图' : '逐一放置'}”让两边都出现 ${target} 块。`, prompted: progress.hints > 0 });
       setFeedback(sceneId, '天平安静下来了。小通不急着说“你会了”，更想知道：你是怎样知道两边一样的？', true);
@@ -773,6 +801,7 @@
   function useBalanceHint(sceneId) {
     const progress = sceneProgress(sceneId);
     progress.hints += 1;
+    recordOperation(sceneId, '请小通给了一个小提示。');
     setFeedback(sceneId, '小提示：不用急着找“更快”的办法。把左边的积木一块一块数出来，再看看右边是不是也有同样多。');
     speak('不用急着找更快的办法。把左边一块一块数出来，再看看右边是不是也有同样多。');
     saveState();
@@ -785,6 +814,7 @@
     const option = scene.activity.options.find((item) => item.id === answerId);
     if (!option) return;
     progress.selectedAnswer = answerId;
+    recordOperation(sceneId, `选择“${option.label}”。`);
     if (option.correct) {
       completeExplore(scene, { representation: scene.subject === 'english' || scene.id === 'chinese-sound-lab' ? '声音' : '图', note: `孩子选择“${option.label}”。`, prompted: progress.hints > 0 });
       setFeedback(sceneId, `你选了“${option.label}”。小通想听你说说：你是从哪里发现它的？`, true);
@@ -799,6 +829,7 @@
   function selectSequence(sceneId, index) {
     const progress = sceneProgress(sceneId);
     progress.selectedSequenceIndex = Number(index);
+    recordOperation(sceneId, `选中了第 ${Number(index) + 1} 张顺序卡。`);
     saveState();
     render();
   }
@@ -820,6 +851,7 @@
     [list[selected], list[next]] = [list[next], list[selected]];
     progress.sequence = list;
     progress.selectedSequenceIndex = next;
+    recordOperation(sceneId, `把一张顺序卡往${direction === 'up' ? '上' : '下'}移动。`);
     saveState();
     render();
   }
@@ -845,6 +877,7 @@
     const selected = new Set(progress.selectedPieces || []);
     selected.has(piece) ? selected.delete(piece) : selected.add(piece);
     progress.selectedPieces = [...selected];
+    recordOperation(sceneId, `${selected.has(piece) ? '选了' : '放回了'}“${piece}”。`);
     saveState();
     render();
   }
@@ -869,6 +902,7 @@
     const scene = content.sceneById[sceneId];
     const progress = sceneProgress(sceneId);
     progress.selectedAction = action;
+    recordOperation(sceneId, `听到指令后选择“${action}”。`);
     if (action === scene.activity.correctAction) {
       completeExplore(scene, { representation: '动作', note: `孩子听到指令后选择“${action}”。`, prompted: progress.hints > 0 });
       setFeedback(sceneId, `小通收到“${action}”的动作卡啦。你也可以站起来真的做一次。`, true);
@@ -890,6 +924,7 @@
   function chooseSentence(sceneId, sentence) {
     const progress = sceneProgress(sceneId);
     progress.selectedSentence = sentence;
+    recordOperation(sceneId, `选了一张想法卡：“${sentence}”。`);
     setFeedback(sceneId, `你选了：“${sentence}” 这是一种把想法说出来的办法。`, true);
     saveState();
     render();
@@ -917,6 +952,8 @@
         const progress = sceneProgress(sceneId);
         progress.recorded = true;
         progress.recordingSeconds = Math.max(1, Math.round((Date.now() - runtime.recordingStartedAt) / 1000));
+        runtime.recordingSceneId = sceneId;
+        recordOperation(sceneId, `留下了 ${progress.recordingSeconds} 秒的本地口头解释。`);
         runtime.mediaRecorder.stream.getTracks().forEach((track) => track.stop());
         runtime.mediaRecorder = null;
         saveState();
@@ -1012,6 +1049,7 @@
     }
     const progress = sceneProgress(sceneId);
     progress.drawingData = canvas.toDataURL('image/png');
+    recordOperation(sceneId, '留下了一张自己的探索画。');
     if (context === 'expression') {
       setFeedback(sceneId, '这张画可以帮小通看见你的想法。现在可以继续换故事。', true);
     } else {
@@ -1101,6 +1139,22 @@
     setRoute('home');
   }
 
+  function toggleInterest(theme) {
+    const selected = new Set(state.profile.interestThemes || []);
+    selected.has(theme) ? selected.delete(theme) : selected.add(theme);
+    state.profile.interestThemes = [...selected];
+    saveState();
+    render();
+    announce(`${theme}${selected.has(theme) ? '已经加入' : '已经移出'}下一步探索线索。`);
+  }
+
+  function toggleOperationReplay(sceneId) {
+    const progress = sceneProgress(sceneId);
+    progress.showReplay = !progress.showReplay;
+    saveState();
+    render();
+  }
+
   function updateSetting(event) {
     const target = event.target.closest('[data-setting]');
     if (!target) return;
@@ -1151,6 +1205,7 @@
       case 'draw-clear': clearDrawing(); break;
       case 'draw-save': saveDrawing(sceneId, actionNode.dataset.context); break;
       case 'draw-alternative': useDrawAlternative(sceneId, actionNode.dataset.context); break;
+      case 'toggle-operation-replay': toggleOperationReplay(sceneId); break;
       case 'transfer-answer': completeTransfer(content.sceneById[sceneId], actionNode.dataset.answer); break;
       case 'review-answer': completeDelayedReview(content.sceneById[sceneId], actionNode.dataset.answer); break;
       case 'seed-question': completeSeed(content.sceneById[sceneId], actionNode.dataset.question, 'question'); break;
@@ -1159,6 +1214,7 @@
       case 'project-start': startProject(actionNode.dataset.projectId); break;
       case 'take-break': state.session.paused = true; state.session.breakOpen = false; saveState(); render(); announce('好，去活动一下。回来后可以继续。'); break;
       case 'close-break': state.session.breakOpen = false; saveState(); render(); break;
+      case 'toggle-interest': toggleInterest(actionNode.dataset.interest); break;
       case 'delete-data': deleteData(); break;
       default: break;
     }

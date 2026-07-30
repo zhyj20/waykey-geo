@@ -136,6 +136,8 @@
         selectedAction: null,
         expressionMode: null,
         selectedSentence: null,
+        roleChoice: null,
+        supportLevel: 'wait',
         drawingData: null,
         recorded: false,
         operationLog: [],
@@ -556,7 +558,20 @@
       <h2>先用你的办法试一试</h2>
       <div class="instruction-row"><p>${escapeHTML(scene.activity.prompt || '慢慢试，小通会看见你的办法。')}</p><button class="read-button" type="button" data-say="${escapeHTML(scene.activity.prompt || scene.subtitle)}">听题目</button></div>
       <div class="activity-panel">${activityBody}</div>
+      ${renderSupportLadder(scene, progress)}
       <div class="stage-footer"><button class="button button-quiet" type="button" data-route="home">先去别处看看</button><button class="button button-primary" type="button" data-action="mission-next" data-scene-id="${scene.id}">我试好了，想说说想法</button></div>`;
+  }
+
+  function renderSupportLadder(scene, progress) {
+    const active = progress.supportLevel || 'wait';
+    const supports = [
+      ['wait', '小通先等等', '我想自己再看看。'],
+      ['represent', '换一种看法', '用图、动作或实物再看一眼。'],
+      ['clue', '给我小线索', '只给一小点，不说完整答案。'],
+      ['together', '一起走一步', '我们只做下一小步。'],
+      ['teach', '我来教小通', '把你的办法演、画或说出来。']
+    ];
+    return `<section class="support-ladder" aria-label="小通的陪伴办法"><div><h3>想换一种陪伴吗？</h3><p>不用着急。选你现在最需要的一小步。</p></div><div class="support-options">${supports.map(([id, label, note]) => `<button class="support-option ${active === id ? 'selected' : ''}" type="button" data-action="support-step" data-scene-id="${scene.id}" data-support="${id}"><b>${label}</b><span>${note}</span></button>`).join('')}</div></section>`;
   }
 
   function renderExpression(scene, progress) {
@@ -575,6 +590,7 @@
       ${progress.expressionMode === 'cards' ? `<div class="sentence-options">${sentences.map((sentence) => `<button class="sentence-option ${progress.selectedSentence === sentence ? 'selected' : ''}" type="button" data-action="sentence-choose" data-sentence="${escapeHTML(sentence)}">${escapeHTML(sentence)}</button>`).join('')}</div>` : ''}
       ${progress.expressionMode === 'voice' ? renderVoicePanel(scene, progress) : ''}
       ${progress.expressionMode === 'draw' ? renderDraw(scene, progress, 'expression') : ''}
+      ${renderRolePlay(scene, progress)}
       ${renderOperationReplay(scene, progress)}
       ${feedbackMarkup(progress)}
       <div class="stage-footer"><button class="button button-quiet" type="button" data-action="mission-prev" data-scene-id="${scene.id}">回到刚才的任务</button><button class="button button-primary" type="button" data-action="expression-confirm" data-scene-id="${scene.id}">我已经表达了，换个故事试试</button></div>`;
@@ -586,6 +602,11 @@
       ? `<div class="recording-replay"><b>回听我刚才说的话</b><audio controls preload="metadata" src="${runtime.recordingUrl}">这台电脑不能播放这段录音。</audio><small>录音只留在这次浏览器会话；刷新或删除本机数据后不会保留。</small></div>`
       : '';
     return `<div class="recording-status"><b>语音只在你按下录音后才会使用麦克风。</b><p>${recording ? '正在录音。说完后按“停下来”。' : progress.recorded ? '已经留下本次会话的本地录音。你也可以不用录音，改用想法卡或画图。' : '如果电脑不支持录音，也可以直接用想法卡或画图。'}</p><div class="hero-actions">${recording ? '<button class="button button-yellow small-button" type="button" data-action="record-stop">停下来</button>' : '<button class="button button-secondary small-button" type="button" data-action="record-start">开始本地录音</button>'}<button class="read-button" type="button" data-say="请告诉小通，你刚才是怎样想到的。">听提示</button></div>${replay}</div>`;
+  }
+
+  function renderRolePlay(scene, progress) {
+    if (!scene.roleCards?.length) return '';
+    return `<section class="role-play"><div><h3>演给小通看</h3><p>选一个角色，站起来演一句、做一个动作，或者让小通听你讲。</p></div><div class="role-card-grid">${scene.roleCards.map((role) => `<button class="role-card ${progress.roleChoice === role ? 'selected' : ''}" type="button" data-action="role-select" data-scene-id="${scene.id}" data-role="${escapeHTML(role)}">${escapeHTML(role)}</button>`).join('')}</div><button class="button button-secondary small-button" type="button" data-action="role-confirm" data-scene-id="${scene.id}">我演完了，告诉小通</button></section>`;
   }
 
   function renderOperationReplay(scene, progress) {
@@ -808,6 +829,38 @@
     render();
   }
 
+  function supportMessage(scene, support) {
+    const nextStep = {
+      balance: '先把一边的一块，和另一边的一块配成朋友，再看看有没有落单的。',
+      choice: '先把每张卡最明显的图或第一个声音慢慢看、听一遍。',
+      sequence: '先找一张你觉得“故事刚开始”时才会出现的卡。',
+      build: '先问一问：这个地方最需要遮挡、支撑，还是让人走过去？',
+      draw: '先只画一个人、一个物品或一个地点，不用一下画完整故事。',
+      action: '先听一遍，再用身体做出你听到的动作。'
+    }[scene.activity.kind] || '先说出你最先注意到的一点。';
+    if (support === 'wait') return '好，小通先不说答案。你可以自己再看一会儿；想换一种陪伴时再按这里。';
+    if (support === 'represent') return `我们换一种看法：${nextStep}`;
+    if (support === 'clue') return `只给一小点线索：${nextStep}`;
+    if (support === 'together') return `我们只走下一步，不做完整答案：${nextStep}`;
+    return '太好了，小通想跟着你学。先试一试，等你走到“说想法”时，可以用动作、画或角色把你的办法教给小通。';
+  }
+
+  function useSupport(sceneId, support) {
+    const scene = content.sceneById[sceneId];
+    if (!scene) return;
+    const progress = sceneProgress(sceneId);
+    const validSupports = ['wait', 'represent', 'clue', 'together', 'teach'];
+    if (!validSupports.includes(support)) return;
+    progress.supportLevel = support;
+    if (support === 'clue' || support === 'together') progress.hints += 1;
+    recordOperation(sceneId, `选择“小通${support === 'wait' ? '先等等' : support === 'represent' ? '换一种看法' : support === 'clue' ? '给一小线索' : support === 'together' ? '一起走一步' : '跟我学'}”的陪伴方式。`);
+    const message = supportMessage(scene, support);
+    setFeedback(sceneId, message, support === 'wait' || support === 'teach');
+    speak(message);
+    saveState();
+    render();
+  }
+
   function chooseOption(sceneId, answerId) {
     const scene = content.sceneById[sceneId];
     const progress = sceneProgress(sceneId);
@@ -928,6 +981,37 @@
     setFeedback(sceneId, `你选了：“${sentence}” 这是一种把想法说出来的办法。`, true);
     saveState();
     render();
+  }
+
+  function selectRole(sceneId, role) {
+    const scene = content.sceneById[sceneId];
+    if (!scene?.roleCards?.includes(role)) return;
+    const progress = sceneProgress(sceneId);
+    progress.roleChoice = role;
+    recordOperation(sceneId, `选择角色：“${role}”。`);
+    setFeedback(sceneId, '选好了。你可以站起来演一句、做一个动作，或者把这个角色的话讲给小通听。', true);
+    saveState();
+    render();
+  }
+
+  function confirmRolePlay(sceneId) {
+    const scene = content.sceneById[sceneId];
+    if (!scene) return;
+    const progress = sceneProgress(sceneId);
+    if (!progress.roleChoice) {
+      announce('先选一个角色。你也可以回到想法卡、录音或画图。');
+      return;
+    }
+    if (completeExpression(scene, {
+      representation: '动作',
+      note: `孩子用角色“${progress.roleChoice}”完成角色扮演并讲述自己的想法。`,
+      prompted: false
+    })) {
+      recordOperation(sceneId, `用“${progress.roleChoice}”完成角色扮演。`);
+      setFeedback(sceneId, '小通看见了你的表演，也听见了你的想法。现在可以把这个想法放进新故事里试试看。', true);
+      saveState();
+      render();
+    }
   }
 
   async function startRecording(sceneId) {
@@ -1188,6 +1272,7 @@
       case 'balance-add': addBalance(sceneId, Number(actionNode.dataset.count)); break;
       case 'balance-guess': addBalance(sceneId, Number(actionNode.dataset.count), true); break;
       case 'balance-hint': useBalanceHint(sceneId); break;
+      case 'support-step': useSupport(sceneId, actionNode.dataset.support); break;
       case 'choice-answer': chooseOption(sceneId, actionNode.dataset.answerId); break;
       case 'sequence-select': selectSequence(sceneId, actionNode.dataset.index); break;
       case 'sequence-move': moveSequence(sceneId, actionNode.dataset.direction); break;
@@ -1199,6 +1284,8 @@
       case 'mission-prev': previousMissionStage(sceneId); break;
       case 'expression-mode': setExpressionMode(sceneId, actionNode.dataset.mode); break;
       case 'sentence-choose': chooseSentence(sceneId, actionNode.dataset.sentence); break;
+      case 'role-select': selectRole(sceneId, actionNode.dataset.role); break;
+      case 'role-confirm': confirmRolePlay(sceneId); break;
       case 'expression-confirm': confirmExpression(sceneId); break;
       case 'record-start': startRecording(sceneId); break;
       case 'record-stop': stopRecording(); break;

@@ -138,11 +138,14 @@ window.SELF_LEARN_CONTENT = (() => {
       concepts: ['english-listen'], representations: ['声音', '图', '语言'],
       realWorld: '和家长一起说出 3 个动物词，指一指对应的物品或图片。',
       seed: 'cat 和 hat 的声音哪里像？',
-      activity: { kind: 'choice', prompt: '按一下再听：cat。你觉得小通在找谁？', say: 'cat. Cat.', options: [
-        { id: 'a', label: 'cat', detail: '小猫', correct: true },
-        { id: 'b', label: 'dog', detail: '小狗', correct: false, misconception: '可以再听一次，只听声音，不急着猜。' },
-        { id: 'c', label: 'fish', detail: '小鱼', correct: false, misconception: '先把听到的声音说一遍，再选。' }
+      activity: { kind: 'match', prompt: '先听声音卡，再把它和一张图片词卡连成朋友。', say: 'cat. Cat.', leftCards: [
+        { id: 'cat-sound', label: '听见：cat', say: 'cat. Cat.' }
+      ], rightCards: [
+        { id: 'cat-picture', label: 'cat', detail: '小猫', correctWith: 'cat-sound' },
+        { id: 'dog-picture', label: 'dog', detail: '小狗', misconception: '可以再听一次，只听声音，不急着猜。' },
+        { id: 'fish-picture', label: 'fish', detail: '小鱼', misconception: '先把听到的声音说一遍，再选。' }
       ], transfer: '听见 dog 时，应该找哪一个词？', transferOptions: ['dog', 'cat', 'red'], correct: 'dog' },
+      treasure: { word: 'cat', meaning: '小猫', collectionLabel: '我在声音和图片里找到 cat' },
       misconceptions: []
     },
     {
@@ -152,6 +155,7 @@ window.SELF_LEARN_CONTENT = (() => {
       realWorld: '和家长轮流说 jump、clap、sit，再做出动作。',
       seed: '如果小通说 turn around，你猜会发生什么？',
       activity: { kind: 'action', prompt: '按一下听指令：clap。小通现在应该做什么？', say: 'Clap. Clap your hands.', actions: ['拍手', '坐下', '跳一跳'], correctAction: '拍手', transfer: '听见 jump 时，小通应该？', transferOptions: ['跳一跳', '拍手', '躺下'], correct: '跳一跳' },
+      treasure: { word: 'jump', meaning: '跳一跳', collectionLabel: '我把 jump 用在了新指令里' },
       misconceptions: []
     },
     {
@@ -162,6 +166,7 @@ window.SELF_LEARN_CONTENT = (() => {
       seed: '如果朋友问 How are you?，你想怎样回答？',
       activity: { kind: 'sequence', prompt: '把见面小对话排好。', cards: ['Bye!', 'Hello!', 'I am Xiaotong.'], correctOrder: ['Hello!', 'I am Xiaotong.', 'Bye!'], transfer: '第一次见朋友时，最适合先说哪一句？', transferOptions: ['Hello!', 'Bye!', 'Good night!'], correct: 'Hello!' },
       roleCards: ['我是小通：Hello! I am Xiaotong.', '我是新朋友：Hello! Nice to meet you.', '我是小导演：我来决定谁先说话。'],
+      treasure: { word: 'Hello!', meaning: '你好', collectionLabel: '我在见面小剧场里说出 Hello!' },
       misconceptions: []
     },
     {
@@ -175,6 +180,7 @@ window.SELF_LEARN_CONTENT = (() => {
         { id: 'b', label: 'blue cat', detail: '蓝色小猫', correct: false, misconception: '可以先找颜色，再找物品。' },
         { id: 'c', label: 'jump dog', detail: '跳起来的小狗', correct: false, misconception: '这个词没有告诉小通气球的颜色。' }
       ], transfer: '想说“蓝色的球”，你会选？', transferOptions: ['blue ball', 'red ball', 'cat ball'], correct: 'blue ball' },
+      treasure: { word: 'blue ball', meaning: '蓝色的球', collectionLabel: '我在新场景里会说 blue ball' },
       misconceptions: []
     }
   ];
@@ -209,13 +215,40 @@ window.SELF_LEARN_CONTENT = (() => {
     }
   ];
 
+  // 问题线不是一个文本框，而是一条可被后续探索接住的兴趣线。
+  // 每个场景声明孩子常会提出的观察角度、可拼成的问题片段与可继续去的场景。
+  const inquiryTrails = [
+    { sceneId: 'math-balance', subject: 'math', tags: ['数量', '平衡'], pieces: ['两边放同样多时，天平会安静下来', '5 可以分成几和几', '一边多一块会发生什么'], nextSceneIds: ['math-picnic', 'math-stairs'] },
+    { sceneId: 'math-picnic', subject: 'math', tags: ['分享', '公平'], pieces: ['两位朋友怎样才会拿得一样多', '多来一位朋友时怎样分', '6 块饼干可以怎样分成两份'], nextSceneIds: ['math-balance', 'math-stairs'] },
+    { sceneId: 'math-stairs', subject: 'math', tags: ['路线', '计数'], pieces: ['每次跨两级会数到哪里', '倒着走时第一步在哪里', '脚印为什么要排顺序'], nextSceneIds: ['math-city', 'math-balance'] },
+    { sceneId: 'math-city', subject: 'math', tags: ['形状', '规律'], pieces: ['三角形屋顶看起来更稳', '图案下一块会是什么', '家里哪些东西像圆形'], nextSceneIds: ['math-stairs', 'chinese-character-workshop'] },
+    { sceneId: 'chinese-sound-lab', subject: 'chinese', tags: ['声音', '口型'], pieces: ['猫和马开头的声音像不像', '把第一个声音拉长会听见什么', '哪个词和米的开头像'], nextSceneIds: ['chinese-book-detective', 'english-sound-friends'] },
+    { sceneId: 'chinese-book-detective', subject: 'chinese', tags: ['故事', '为什么'], pieces: ['小熊为什么没有先带雨伞', '乌云出现后会发生什么', '故事为什么要这样排顺序'], nextSceneIds: ['chinese-story-director', 'math-stairs'] },
+    { sceneId: 'chinese-character-workshop', subject: 'chinese', tags: ['汉字', '画面'], pieces: ['休字里的树在说什么', '林字为什么像两棵树', '一个字里还藏着哪些画面'], nextSceneIds: ['chinese-story-director', 'math-city'] },
+    { sceneId: 'chinese-story-director', subject: 'chinese', tags: ['故事', '表达'], pieces: ['小雨点会对谁说什么', '小猫会怎样帮助小通', '故事后面还会发生什么'], nextSceneIds: ['chinese-book-detective', 'english-mini-theatre'] },
+    { sceneId: 'english-sound-friends', subject: 'english', tags: ['声音', '动物'], pieces: ['cat 和 hat 哪里听起来像', 'dog 的声音要找哪位朋友', '听见一个词时怎样找到图片'], nextSceneIds: ['english-command-station', 'chinese-sound-lab'] },
+    { sceneId: 'english-command-station', subject: 'english', tags: ['动作', '英语'], pieces: ['jump 和 clap 的动作有什么不同', 'turn around 会邀请小通做什么', '我还能用英语请家人做什么动作'], nextSceneIds: ['english-mini-theatre', 'math-stairs'] },
+    { sceneId: 'english-mini-theatre', subject: 'english', tags: ['朋友', '对话'], pieces: ['第一次见面为什么先说 Hello', '朋友问 How are you 时我想怎样回答', '谁应该先开口'], nextSceneIds: ['english-treasure-book', 'chinese-story-director'] },
+    { sceneId: 'english-treasure-book', subject: 'english', tags: ['颜色', '词语'], pieces: ['同一个 red 可以形容哪些东西', 'blue ball 为什么要先说颜色', '我还会在哪个地方用这个词'], nextSceneIds: ['english-sound-friends', 'math-city'] }
+  ];
+
+  // 世界状态只从真实完成的场景推导，不预置“已经解锁”的虚假结果。
+  const worldPlaces = [
+    { id: 'forest-camp', title: '森林野餐地', color: 'yellow', art: 'assets/balance-card.svg', sceneIds: ['math-picnic', 'chinese-story-director', 'english-command-station'], waiting: '野餐篮还空着。小通在等你决定先分什么、说什么、做什么。', growing: '野餐地正在热闹起来：你已经帮小通完成一部分准备。', ready: '野餐地准备好了！这些变化来自你真的完成过的探索。' },
+    { id: 'rescue-path', title: '动物救援路', color: 'blue', art: 'assets/stairs.svg', sceneIds: ['math-stairs', 'chinese-book-detective', 'english-sound-friends'], waiting: '救援路上还没有脚印。先选一张任务卡，让小通知道往哪里走。', growing: '救援路出现了新的脚印。小通会保留你的进度，明天也能继续。', ready: '动物朋友已经找到路啦！这是你在不同学科留下的真实线索。' },
+    { id: 'museum-hall', title: '迷你博物馆', color: 'purple', art: 'assets/pattern.svg', sceneIds: ['math-city', 'chinese-character-workshop', 'english-treasure-book'], waiting: '展台正在等第一件作品：一个形状、一幅字的画面，或一个英文词。', growing: '展台多了一件你留下的作品。下一件可以来自另一个学习岛。', ready: '迷你博物馆开馆啦！每件展品都来自你亲手完成的一次探索。' }
+  ];
+
   return {
     subjects,
     concepts,
     scenes,
     projects,
+    inquiryTrails,
+    worldPlaces,
     sceneById: Object.fromEntries(scenes.map((scene) => [scene.id, scene])),
     subjectById: Object.fromEntries(subjects.map((subject) => [subject.id, subject])),
-    conceptById: Object.fromEntries(concepts.map((concept) => [concept.id, concept]))
+    conceptById: Object.fromEntries(concepts.map((concept) => [concept.id, concept])),
+    inquiryTrailByScene: Object.fromEntries(inquiryTrails.map((trail) => [trail.sceneId, trail]))
   };
 })();

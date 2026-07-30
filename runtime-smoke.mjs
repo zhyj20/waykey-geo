@@ -77,6 +77,7 @@ function triggerHold() {
 
 expect(appNode.innerHTML.includes('三座学习岛'), 'Child home did not render.');
 expect(appNode.innerHTML.includes('小通的小世界'), 'Persistent child world did not render on home.');
+expect(!store.has('selfLearningMasterV2'), 'Opening the child home must not fabricate saved progress before any interaction.');
 clickSay('小通先说一小段话。');
 clickAction('speech-control');
 clickAction('speech-control');
@@ -174,5 +175,5 @@ expect(!store.has('selfLearningMasterV2'), 'Delete data did not clear local lear
 
 console.log(JSON.stringify({
   status: 'passed',
-  scenarios: ['math five-stage evidence', 'support ladder', 'delayed review', 'child operation replay', 'persistent world state', 'all 12 child missions', 'Chinese mission', 'English match interaction', 'English transfer treasure', 'role-play expression', 'question workshop and follow-up', 'sound pause/replay control', 'parent gate', 'interest setting', 'local data deletion']
+  scenarios: ['no fabricated home progress', 'math five-stage evidence', 'support ladder', 'delayed review', 'child operation replay', 'persistent world state', 'all 12 child missions', 'Chinese mission', 'English match interaction', 'English transfer treasure', 'role-play expression', 'question workshop and follow-up', 'sound pause/replay control', 'parent gate', 'interest setting', 'local data deletion']
 }, null, 2));

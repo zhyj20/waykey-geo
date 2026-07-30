@@ -43,6 +43,8 @@ const balance = content.sceneById['math-balance'];
 expect(balance.misconceptions?.length >= 2, 'Balance mission needs two misconception hypotheses.');
 expect(['one', 'split', 'draw'].every((method) => app.includes(`data-method="${method}"`)), 'Balance mission needs three valid starting strategies.');
 expect(content.scenes.every((scene) => scene.realWorld && scene.seed && scene.representations?.length >= 3), 'Every scene needs a real-world challenge, a discovery seed, and multiple representations.');
+const rolePlayScenes = content.scenes.filter((scene) => scene.roleCards?.length >= 2);
+expect(rolePlayScenes.length >= 2, 'At least two language scenes need role-play choices.');
 
 const requiredAppContracts = [
   'selfLearningMasterV2', 'localStorage', 'MediaRecorder', 'SpeechSynthesisUtterance',
@@ -51,6 +53,8 @@ const requiredAppContracts = [
   'data-hold-parent', 'delete-data', 'review-answer', 'renderParent',
   'summary:', 'unknown:', 'recommendation:', 'operationLog', 'renderOperationReplay',
   'recording-replay', 'toggle-interest', 'interestThemes', 'breakEvery = 8 * 60'
+  , 'renderSupportLadder', 'support-step', 'useSupport', 'supportLevel',
+  'renderRolePlay', 'role-select', 'role-confirm', 'confirmRolePlay'
 ];
 const missingContracts = requiredAppContracts.filter((token) => !app.includes(token));
 expect(!missingContracts.length, `Missing interaction/data contracts: ${missingContracts.join(', ')}`);
@@ -61,12 +65,12 @@ expect(!/排行榜|连续答对|金币|限时抢答/.test(app), 'The child exper
 const requiredHtml = ['data.js', 'app.js', 'live-region', 'parent-gate', 'privacy-dialog', 'skip-link'];
 const missingHtml = requiredHtml.filter((token) => !html.includes(token));
 expect(!missingHtml.length, `Missing app shell/accessibility hooks: ${missingHtml.join(', ')}`);
-expect(css.includes('reduced-motion') && css.includes(':focus-visible') && css.includes('draggable-block'), 'Accessibility and alternate-interaction styles are incomplete.');
+expect(css.includes('reduced-motion') && css.includes(':focus-visible') && css.includes('draggable-block') && css.includes('support-ladder') && css.includes('role-play'), 'Accessibility and alternate-interaction styles are incomplete.');
 
 console.log(JSON.stringify({
   status: 'passed',
   subjects: content.subjects.length,
   scenes: content.scenes.length,
   projects: content.projects.length,
-  checked: ['content model', 'three-subject projects', 'five-stage evidence hooks', 'multi-representation evidence', 'local-only privacy', 'sound/voice/replay fallback', 'drag click alternative', 'parent interest settings', 'parent gate/delete', 'keyboard/motion styles']
+  checked: ['content model', 'three-subject projects', 'five-stage evidence hooks', 'multi-representation evidence', 'support ladder', 'role-play expression', 'local-only privacy', 'sound/voice/replay fallback', 'drag click alternative', 'parent interest settings', 'parent gate/delete', 'keyboard/motion styles']
 }, null, 2));

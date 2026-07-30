@@ -129,6 +129,7 @@ window.SELF_LEARN_CONTENT = (() => {
       realWorld: '把今天发生的一件小事讲给家人听，记得说清“谁、在哪里、发生了什么”。',
       seed: '如果小雨点会说话，它会对谁说什么？',
       activity: { kind: 'draw', prompt: '请画一个故事开头：小通在雨天发现了一把小伞。画完后可以讲一讲。', transfer: '故事里还可以出现谁？', transferOptions: ['一只帮助小通的小猫', '没有任何人', '只重复刚才一句'], correct: '一只帮助小通的小猫' },
+      roleCards: ['我是小通：我发现了一把小伞。', '我是小猫：我想帮小通想办法。', '我是讲故事的人：我来告诉大家发生了什么。'],
       misconceptions: []
     },
     {
@@ -160,6 +161,7 @@ window.SELF_LEARN_CONTENT = (() => {
       realWorld: '和家长演一次见面：Hello! I am ____. Bye!。',
       seed: '如果朋友问 How are you?，你想怎样回答？',
       activity: { kind: 'sequence', prompt: '把见面小对话排好。', cards: ['Bye!', 'Hello!', 'I am Xiaotong.'], correctOrder: ['Hello!', 'I am Xiaotong.', 'Bye!'], transfer: '第一次见朋友时，最适合先说哪一句？', transferOptions: ['Hello!', 'Bye!', 'Good night!'], correct: 'Hello!' },
+      roleCards: ['我是小通：Hello! I am Xiaotong.', '我是新朋友：Hello! Nice to meet you.', '我是小导演：我来决定谁先说话。'],
       misconceptions: []
     },
     {

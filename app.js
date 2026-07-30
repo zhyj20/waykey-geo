@@ -236,6 +236,14 @@
     return state.sceneProgress[sceneId];
   }
 
+  function savedSceneProgress(sceneId) {
+    return state.sceneProgress[sceneId] || null;
+  }
+
+  function isSceneCompleted(sceneId) {
+    return Boolean(savedSceneProgress(sceneId)?.completedAt);
+  }
+
   function startSession() {
     if (!state.session.active) {
       state.session.active = true;
@@ -500,8 +508,8 @@
   }
 
   function worldPlaceProgress(place) {
-    const completed = place.sceneIds.filter((sceneId) => sceneProgress(sceneId).completedAt);
-    const nextSceneId = place.sceneIds.find((sceneId) => !sceneProgress(sceneId).completedAt) || place.sceneIds[0];
+    const completed = place.sceneIds.filter((sceneId) => isSceneCompleted(sceneId));
+    const nextSceneId = place.sceneIds.find((sceneId) => !isSceneCompleted(sceneId)) || place.sceneIds[0];
     return { completed: completed.length, nextSceneId };
   }
 
@@ -531,7 +539,7 @@
   }
 
   function renderHome() {
-    const recommendations = content.subjects.map((subject) => content.scenes.find((scene) => scene.subject === subject.id && !sceneProgress(scene.id).completedAt) || content.scenes.find((scene) => scene.subject === subject.id));
+    const recommendations = content.subjects.map((subject) => content.scenes.find((scene) => scene.subject === subject.id && !isSceneCompleted(scene.id)) || content.scenes.find((scene) => scene.subject === subject.id));
     return `
       <div class="page-wrap">
         <p class="greeting">你好，${escapeHTML(state.profile.name)}。今天想从哪一个小问题出发？</p>
@@ -558,7 +566,7 @@
         <div class="section-heading"><div><h2>三座学习岛</h2><p>不必按课本页码排队。学校进度、你的兴趣和已经收集到的证据会一起决定下一步。</p></div></div>
         <div class="subject-grid">${content.subjects.map((subject) => {
           const subjectScenes = content.scenes.filter((scene) => scene.subject === subject.id);
-          const finished = subjectScenes.filter((scene) => sceneProgress(scene.id).completedAt).length;
+          const finished = subjectScenes.filter((scene) => isSceneCompleted(scene.id)).length;
           return `<button class="subject-card ${subject.color}" type="button" data-action="show-subject" data-subject="${subject.id}"><div class="card-content"><span class="card-kicker">${finished}/${subjectScenes.length} 个探索留下发现</span><h3>${escapeHTML(subject.childName)}</h3><p>${escapeHTML(subject.description)}</p></div><img class="card-art" src="${subject.art}" alt="" /></button>`;
         }).join('')}</div>
         <div class="section-heading"><div><h2>你的问题线</h2><p>问题不会被判对错；它们会变成下一次探索的入口。</p></div></div>
@@ -634,7 +642,7 @@
     const draft = getQuestionDraft();
     const trail = content.inquiryTrailByScene[draft.sceneId];
     const scene = content.sceneById[draft.sceneId];
-    const contexts = content.subjects.map((subject) => content.scenes.find((item) => item.subject === subject.id && !sceneProgress(item.id).completedAt) || content.scenes.find((item) => item.subject === subject.id));
+    const contexts = content.subjects.map((subject) => content.scenes.find((item) => item.subject === subject.id && !isSceneCompleted(item.id)) || content.scenes.find((item) => item.subject === subject.id));
     const preview = questionTextForDraft(draft);
     const buildPanel = `<section class="question-builder"><h2>先选一个开头</h2><div class="question-mode-grid">${questionModes().map(([id, label, note]) => `<button class="question-mode ${draft.mode === id ? 'selected' : ''}" type="button" data-action="question-mode" data-question-mode="${id}"><b>${label}</b><span>${note}</span></button>`).join('')}</div><h2>再拼一块你想问的事</h2><div class="question-piece-grid">${trail.pieces.map((piece, index) => `<button class="question-piece ${draft.pieceIndex === index ? 'selected' : ''}" type="button" data-action="question-piece" data-piece-index="${index}">${escapeHTML(piece)}</button>`).join('')}</div><div class="question-preview"><b>你做出来的问题</b><p>“${escapeHTML(preview)}”</p><button class="button button-primary" type="button" data-action="question-save">把它放进发现册</button></div></section>`;
     const drawPanel = `<section class="question-capture-panel"><h2>画一个想知道的东西</h2><p>不用画漂亮。画一件让你好奇的事、一个路线或一个故事开头。</p><canvas class="draw-canvas question-canvas" id="question-canvas" width="840" height="520" tabindex="0" aria-label="问题画板，使用鼠标、手指或触控笔画出你想问的东西；也可以切回图卡拼问题"></canvas><div class="hero-actions"><button class="button button-quiet small-button" type="button" data-action="question-draw-clear">重新画</button><button class="button button-primary small-button" type="button" data-action="question-draw-save">把问题画放进发现册</button><button class="button button-quiet small-button" type="button" data-action="question-capture" data-capture-mode="build">我想用图卡拼</button></div></section>`;
@@ -882,13 +890,13 @@
   }
 
   function projectProgress(project) {
-    return project.steps.filter((step) => sceneProgress(step.sceneId).completedAt).length;
+    return project.steps.filter((step) => isSceneCompleted(step.sceneId)).length;
   }
 
   function renderProjects() {
     return `
       <div class="page-wrap"><div class="section-heading"><div><h2>一起做个大项目</h2><p>一个问题会穿过语文、数学和英语。先做一小步，也能让世界发生变化。</p></div><button class="button button-secondary small-button" type="button" data-route="home">回到今天探索</button></div>
-      <div class="project-grid">${content.projects.map((project) => { const completed = projectProgress(project); const next = project.steps.find((step) => !sceneProgress(step.sceneId).completedAt) || project.steps[0]; return `<button class="project-card ${project.color}" type="button" data-action="project-start" data-project-id="${project.id}"><div class="card-content"><span class="card-kicker">已经完成 ${completed}/${project.steps.length} 步</span><h3>${escapeHTML(project.title)}</h3><p>${escapeHTML(project.description)}</p><div class="project-steps">${project.steps.map((step) => `<span class="project-step"><i></i>${escapeHTML(step.label)}</span>`).join('')}</div></div><img class="card-art" src="${project.art}" alt="" /></button>`; }).join('')}</div>
+      <div class="project-grid">${content.projects.map((project) => { const completed = projectProgress(project); return `<button class="project-card ${project.color}" type="button" data-action="project-start" data-project-id="${project.id}"><div class="card-content"><span class="card-kicker">已经完成 ${completed}/${project.steps.length} 步</span><h3>${escapeHTML(project.title)}</h3><p>${escapeHTML(project.description)}</p><div class="project-steps">${project.steps.map((step) => `<span class="project-step"><i></i>${escapeHTML(step.label)}</span>`).join('')}</div></div><img class="card-art" src="${project.art}" alt="" /></button>`; }).join('')}</div>
       <div class="empty-state" style="margin-top:22px"><b>项目不是考试。</b> 做完其中一步后，可以先去别的地方探索；下一次再回来继续。</div></div>`;
   }
 
@@ -917,7 +925,7 @@
     const interests = state.profile.interestThemes || [];
     const schoolWords = String(state.profile.schoolTopic || '').replace(/\s+/g, '');
     const candidates = content.scenes.map((scene) => {
-      const progress = sceneProgress(scene.id);
+      const progress = savedSceneProgress(scene.id) || {};
       const concepts = scene.concepts.map((id) => ({ concept: content.concepts.find((item) => item.id === id), status: conceptStatus(id) }));
       const unfinished = !progress.completedAt;
       const needsEvidence = concepts.filter(({ status }) => !['stable', 'transferring'].includes(status.code)).length;
@@ -1507,7 +1515,7 @@
     if (!question) return;
     const trail = content.inquiryTrailByScene[question.sceneId];
     const candidates = [...(trail?.nextSceneIds || []), question.sceneId];
-    const sceneId = candidates.find((id) => content.sceneById[id] && !sceneProgress(id).completedAt) || candidates.find((id) => content.sceneById[id]);
+    const sceneId = candidates.find((id) => content.sceneById[id] && !isSceneCompleted(id)) || candidates.find((id) => content.sceneById[id]);
     if (!sceneId) {
       announce('小通先把这个问题留在发现册里。下次我们可以从它开始。');
       return;
@@ -1653,7 +1661,7 @@
   function startProject(projectId) {
     const project = content.projects.find((item) => item.id === projectId);
     if (!project) return;
-    const step = project.steps.find((item) => !sceneProgress(item.sceneId).completedAt) || project.steps[0];
+    const step = project.steps.find((item) => !isSceneCompleted(item.sceneId)) || project.steps[0];
     state.projects[projectId] = { startedAt: Date.now() };
     saveState();
     setRoute(`mission/${step.sceneId}`);

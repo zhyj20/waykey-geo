@@ -181,6 +181,19 @@ img { max-width: 100%; }
 .sentence-options { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 15px; }
 .sentence-option { border: 1px solid #d5deed; border-radius: 14px; padding: 10px 12px; background: #fff; color: var(--ink); font-weight: 700; }
 .sentence-option.selected { border-color: var(--purple); background: var(--purple-pale); }
+.support-ladder { display: grid; gap: 13px; margin-top: 16px; padding: 17px; border: 1px solid #d8e4f4; border-radius: 19px; background: #f8fbff; }
+.support-ladder h3, .role-play h3 { margin: 0 0 5px; font-size: 18px; }
+.support-ladder p, .role-play p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.55; }
+.support-options { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+.support-option { min-height: 96px; padding: 11px; border: 1px solid #d4dfef; border-radius: 15px; background: #fff; color: var(--ink); text-align: left; }
+.support-option b, .support-option span { display: block; }
+.support-option b { font-size: 14px; }
+.support-option span { margin-top: 5px; color: var(--muted); font-size: 12px; line-height: 1.4; }
+.support-option.selected { border: 2px solid var(--blue); background: var(--blue-pale); }
+.role-play { display: grid; gap: 12px; margin-top: 18px; padding: 17px; border: 1px solid #ddd1fb; border-radius: 19px; background: #fcfaff; }
+.role-card-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; }
+.role-card { min-height: 94px; padding: 12px; border: 1px solid #d8cdf4; border-radius: 15px; background: #fff; color: #4f3978; text-align: left; font-weight: 800; line-height: 1.55; }
+.role-card.selected { border: 2px solid var(--purple); background: var(--purple-pale); }
 .recording-status { margin-top: 14px; padding: 11px; border-radius: 12px; background: var(--yellow-pale); color: #6e4c10; font-size: 14px; }
 
 .transfer-card { padding: 20px; border: 1px solid #d8e0ee; border-radius: 20px; background: #fbfcff; }
@@ -278,6 +291,8 @@ body.reduced-motion *, body.reduced-motion *::before, body.reduced-motion *::aft
   .companion-card { min-height: 180px; }
   .metric-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
   .subject-grid, .scene-grid, .project-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .support-options { grid-template-columns: repeat(3, minmax(0,1fr)); }
+  .role-card-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
   .hero-card { min-height: 310px; }
   .hero-copy { max-width: 67%; }
 }
@@ -298,6 +313,7 @@ body.reduced-motion *, body.reduced-motion *::before, body.reduced-motion *::aft
   .session-rail { grid-template-columns: auto 1fr; }
   .session-progress { grid-column: 1 / -1; }
   .subject-grid, .scene-grid, .project-grid, .choice-grid, .build-grid, .action-grid, .transfer-options, .expression-grid { grid-template-columns: 1fr; }
+  .support-options, .role-card-grid { grid-template-columns: 1fr; }
   .subject-card .card-content, .scene-card .card-content, .project-card .card-content { max-width: 72%; }
   .mission-header { grid-template-columns: 70px 1fr; padding: 18px; }
   .mission-header img { width: 64px; height: 64px; }

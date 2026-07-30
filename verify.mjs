@@ -75,6 +75,8 @@ const missingContracts = requiredAppContracts.filter((token) => !app.includes(to
 expect(!missingContracts.length, `Missing interaction/data contracts: ${missingContracts.join(', ')}`);
 expect(!/\b(fetch|XMLHttpRequest|sendBeacon)\s*\(/.test(app), 'The child experience must not upload learning data by default.');
 expect(app.includes('<audio controls') && app.includes('runtime.recordingUrl'), 'Child recordings need a local replay path.');
+const automaticSpeechCalls = ['speak(messages[method])', "speak('天平安静下来了", 'speak(`右边有', "speak('不用急着找更快", 'speak(message);'].filter((token) => app.includes(token));
+expect(!automaticSpeechCalls.length, `Sound prompts must be child-triggered, not automatic: ${automaticSpeechCalls.join(', ')}`);
 expect(!/排行榜|连续答对|金币|限时抢答/.test(app), 'The child experience must not include competitive reward mechanics.');
 
 const requiredHtml = ['data.js', 'app.js', 'live-region', 'parent-gate', 'privacy-dialog', 'skip-link'];
@@ -87,5 +89,5 @@ console.log(JSON.stringify({
   subjects: content.subjects.length,
   scenes: content.scenes.length,
   projects: content.projects.length,
-  checked: ['content model', 'three-subject projects', 'five-stage evidence hooks', 'multi-representation evidence', 'question trails', 'persistent world state', 'English transfer treasures', 'support ladder', 'role-play expression', 'sound pause/replay fallback', 'local-only privacy', 'drag click alternative', 'parent interest settings', 'parent gate/delete', 'keyboard/motion styles']
+  checked: ['content model', 'three-subject projects', 'five-stage evidence hooks', 'multi-representation evidence', 'question trails', 'persistent world state', 'English transfer treasures', 'support ladder', 'role-play expression', 'child-triggered sound pause/replay fallback', 'local-only privacy', 'drag click alternative', 'parent interest settings', 'parent gate/delete', 'keyboard/motion styles']
 }, null, 2));

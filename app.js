@@ -182,7 +182,7 @@
     if (!state.profile.sound) stopSpeech();
     saveState();
     render();
-    if (state.profile.sound) speak('声音提示已经打开。想暂停或重听时，按右上角的声音控制。');
+    if (state.profile.sound) announce('声音提示已经打开。想听时请主动按“听一遍”；右上角可以暂停或重听。');
     else announce('声音提示已关闭。所有任务仍有文字、图卡和操作替代。');
   }
 
@@ -1001,7 +1001,6 @@
       draw: '好，先用图把看到的数量留住。画完后再看看右边要有几块。'
     };
     setFeedback(sceneId, messages[method]);
-    speak(messages[method]);
     if (method === 'draw') {
       progress.expressionMode = 'draw';
     }
@@ -1018,14 +1017,12 @@
     if (progress.rightCount === target) {
       completeExplore(scene, { representation: progress.method === 'draw' ? '图' : '实物', note: `孩子用“${progress.method === 'split' ? '3 和 2 的分组' : progress.method === 'draw' ? '画图' : '逐一放置'}”让两边都出现 ${target} 块。`, prompted: progress.hints > 0 });
       setFeedback(sceneId, '天平安静下来了。小通不急着说“你会了”，更想知道：你是怎样知道两边一样的？', true);
-      speak('天平安静下来了。你愿意讲讲，你是怎样知道两边一样的吗？');
     } else if (progress.rightCount > target) {
       addEvidence({ scene, phase: 'explore', representation: '实物', prompted: true, note: `右边放到 ${progress.rightCount} 块，孩子正在比较两边。`, outcome: '需要再看', misconception: '可能把平衡理解为放得更多。' });
       setFeedback(sceneId, `右边现在有 ${progress.rightCount} 块。天平没有责怪你，它只是邀请你数一数：左边和右边各有几块？`);
     } else {
       if (isGuess || progress.rightCount === 4) addEvidence({ scene, phase: 'explore', representation: '实物', prompted: true, note: '孩子先猜右边放 4 块。', outcome: '需要再看', misconception: '可能还没有逐一比较两边数量。' });
       setFeedback(sceneId, `右边有 ${progress.rightCount} 块。你发现还差几块了吗？`);
-      speak(`右边有 ${progress.rightCount} 块。你觉得还差几块？`);
     }
     saveState();
     render();
@@ -1036,7 +1033,6 @@
     progress.hints += 1;
     recordOperation(sceneId, '请小通给了一个小提示。');
     setFeedback(sceneId, '小提示：不用急着找“更快”的办法。把左边的积木一块一块数出来，再看看右边是不是也有同样多。');
-    speak('不用急着找更快的办法。把左边一块一块数出来，再看看右边是不是也有同样多。');
     saveState();
     render();
   }
@@ -1069,7 +1065,6 @@
     recordOperation(sceneId, `选择“小通${support === 'wait' ? '先等等' : support === 'represent' ? '换一种看法' : support === 'clue' ? '给一小线索' : support === 'together' ? '一起走一步' : '跟我学'}”的陪伴方式。`);
     const message = supportMessage(scene, support);
     setFeedback(sceneId, message, support === 'wait' || support === 'teach');
-    speak(message);
     saveState();
     render();
   }
